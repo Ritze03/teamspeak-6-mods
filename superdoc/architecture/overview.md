@@ -50,7 +50,8 @@ Dev loop: `tools/cdp/mods-reload.mjs` swaps the panel code into the running clie
 | `native/ts6hook.{c,h}` | per-speaker inline detour: signature scan, speaker pool, per-client overrides, `/speakers` JSON |
 | `native/dsp/` | `ts6dsp` library: leveler -> compressor -> lookahead limiter ([README](../../native/dsp/README.md)) |
 | `native/test/` | hook test without the client (`run_hook_test.sh`, harness + null sink), `sigscan.sh` (signature check on the installed client) |
-| `launcher/ts6-mod`, `launcher/ts6-mod.desktop` | starts the client with the module + debug port, runs the injector; desktop entry template |
+| `launcher/ts6-mod` | starts the client with the module + debug port, runs the injector; prefers `build/libts6mod.so`, falls back to `native/libts6mod.so` |
+| `install.sh`, `teamspeak-6-mods.desktop` | ritz-get install script and desktop entry; see [features/ritz-get.md](../features/ritz-get.md) |
 | `tools/cdp/cdp.mjs` | dependency-free CDP helper (list/eval/inject/watch) |
 | `tools/cdp/mods-inject.mjs` | injects the bundle, provides the `ts6modNative` and `ts6modReadImage` bindings |
 | `tools/cdp/bundle.mjs` | builds the page script from `panel/` (core files, then mods, examples only on request) |
@@ -84,6 +85,7 @@ Dev loop: `tools/cdp/mods-reload.mjs` swaps the panel code into the running clie
 - Per-speaker detour, install, overrides, status: `native/ts6hook.c:detour`, `install`, `ts6hook_set_override`, `ts6hook_status`,
   `ts6hook_speakers_json`; signature check on a new client: `native/test/sigscan.sh`.
 - DSP algorithm: `native/dsp/ts6dsp.c:ts6dsp_process_f32`.
+- Install by ritz-get: [features/ritz-get.md](../features/ritz-get.md).
 - Launch sequence and env vars: `launcher/ts6-mod`.
 - CDP injection, the HTTP proxy path allow-list, the image reader: `tools/cdp/mods-inject.mjs`, `readImage`.
 - Which files go into the page and in what order: `tools/cdp/bundle.mjs:coreFiles`, `buildBundle`.

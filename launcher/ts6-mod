@@ -13,10 +13,11 @@ set -u
 root="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 ts="${TS6MOD_TS_BIN:-/opt/teamspeak/TeamSpeak}"
 cdp="${TS6MOD_CDP_PORT:-9222}"; ctl="${TS6MOD_PORT:-38998}"
-so="$root/native/libts6mod.so"
+so="$root/build/libts6mod.so"   # built by install.sh; dev builds (make -C native) land in native/
+[ -f "$so" ] || so="$root/native/libts6mod.so"
 
 if [ ! -x "$ts" ]; then echo "ts6-mod: client not found at $ts (set TS6MOD_TS_BIN)" >&2; exit 1; fi
-if [ ! -f "$so" ] || [ "$root/native/ts6mod.c" -nt "$so" ] || [ "$root/native/dsp/ts6dsp.c" -nt "$so" ]; then
+if [ "$so" = "$root/native/libts6mod.so" ] && { [ ! -f "$so" ] || [ "$root/native/ts6mod.c" -nt "$so" ] || [ "$root/native/dsp/ts6dsp.c" -nt "$so" ]; }; then
   make -C "$root/native" >&2 || { echo "ts6-mod: building native module failed" >&2; exit 1; }
 fi
 if ! command -v node >/dev/null; then echo "ts6-mod: node (>= 22) is required" >&2; exit 1; fi

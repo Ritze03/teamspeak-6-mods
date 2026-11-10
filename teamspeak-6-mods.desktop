@@ -2,10 +2,8 @@
 Type=Application
 Name=TeamSpeak (modded)
 Comment=TeamSpeak 6 with the ts6-mods native module and Mods settings page
-# Replace <repo> with the absolute path of this repository checkout.
-Exec=<repo>/launcher/ts6-mod %u
-Icon=teamspeak-client
+Exec=teamspeak-6-mods %u
 Terminal=false
-Categories=AudioVideo;Audio;Network;
+Categories=Network;
 MimeType=x-scheme-handler/ts3server;x-scheme-handler/teamspeak;
 StartupWMClass=TeamSpeak
