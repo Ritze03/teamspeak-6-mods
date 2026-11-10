@@ -5,6 +5,10 @@ details: [agc.md](agc.md), [mods-panel.md](mods-panel.md), [mod-net.md](mod-net.
 [mod-aware.md](mod-aware.md), [mod-layout.md](mod-layout.md), [mod-theme.md](mod-theme.md), [mod-chat.md](mod-chat.md),
 [mod-files.md](mod-files.md). Framework: [ts6-mod-api.md](ts6-mod-api.md). Automated checks are separate (`node tools/test/run-all.mjs`).
 
+Test clients must never use your real microphone or speakers: run-all mutes isolated clients automatically (`connect_muted` alone
+does not mute on this build); check with `tools/rig/audio-audit.mjs <cdp-port>`. Test windows go to the hidden Hyprland workspace
+`special:ts6test` (window rule in [test-rig.md](test-rig.md)).
+
 ## Start modded, get back to vanilla
 
 - Close the TeamSpeak client, then run `launcher/ts6-mod` from the repo root (or start the "TeamSpeak (modded)" desktop entry built from
