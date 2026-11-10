@@ -76,7 +76,7 @@ export default async function (ctx) {
     /* ---- settings page: slider changes the tree, switches exist ---- */
     await cfg({});
     await ctx.enable('layout');
-    await ctx.openModsPage();
+    await ctx.openModsPage('layout');
     await ctx.waitFor(`document.querySelector('[data-ts6mod="layout"] input[type=range]')`, 'density slider on the Mods page');
     const toggles = await ctx.eval(`document.querySelectorAll('[data-ts6mod="layout"] input[type=checkbox]').length`);
     ctx.assert(toggles >= 12, `settings show the tab, server-tab and hide switches (${toggles})`);
@@ -84,7 +84,7 @@ export default async function (ctx) {
     await ctx.restoreRoute();
     await ctx.eval(`${DEV}.showServer()`);
     await ctx.waitFor(`${DEV}.probe().rows.length > 2 && ${DEV}.probe().rows.reduce((a, b) => a + b, 0) / ${DEV}.probe().rows.length > ${mean(base.rows) * 1.15}`, 'slider to 130% makes the rows taller');
-    await ctx.openModsPage();
+    await ctx.openModsPage('layout');
     await ctx.eval(`(() => { const r = document.querySelector('[data-ts6mod="layout"] input[type=range]'); r.value = 100; r.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     await ctx.restoreRoute();
     await ctx.disable('layout');

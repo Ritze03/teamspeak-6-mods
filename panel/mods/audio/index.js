@@ -146,16 +146,31 @@
     return { track: h('div', { class: 'mods-meter-track' }, f), v, set(pct, text, kind) { f.style.width = Math.max(0, Math.min(100, pct || 0)) + '%'; f.className = 'mods-meter-fill ' + (kind || ''); v.textContent = text == null ? '-' : text; } }; };
   const inPct = db => Math.max(0, (db + 80) / 80 * 100), inText = db => (db < -100 ? 'silence' : db.toFixed(1) + ' dB');
 
-  /* one parameter field: the kit's slider + number input with a visible help line */
+  /* one parameter field: the kit's slider + number input; the help text is its hover tooltip */
   function paramField(ui, h, [key, label, min, max, step, unit, help], onInput, onCommit) {
-    const s = ui.slider({ label, min, max, step, unit, value: min, onInput, onCommit });
-    return { key, s, el: h('div', { class: 'aud-param', 'data-key': key }, s.el, h('p', { class: 'aud-help' }, help)) };
+    const s = ui.slider({ label, min, max, step, unit, value: min, help, onInput, onCommit });
+    return { key, s, el: h('div', { class: 'aud-param', 'data-key': key }, s.el) };
+  }
+  const MODE_NAMES = { whole: 'Whole stream', per_speaker: 'Per speaker' };
+  /* "Per speaker · Voice": the card status line and (with the delay) the tab bar status; null while the native side is unknown */
+  function statusBits(withDelay) {
+    if (!S || S.native !== 'ok' || !S.cfg) return S && S.native === 'absent' ? ['native module not loaded'] : null;
+    const c = S.cfg, bits = [c.enabled ? MODE_NAMES[c.mode] || c.mode : 'AGC off'];
+    const k = c.preset && presetValues(c.preset) ? c.preset : Object.keys(PRESETS).find(id => same(c, PRESETS[id].values));
+    bits.push(k ? (withDelay ? 'preset ' : '') + presetName(k) + (same(c, presetValues(k)) ? '' : ' (modified)') : 'custom values');
+    if (withDelay && c.enabled && S.status) {
+      const st = S.status, ps = st.per_speaker;
+      const ms = c.mode === 'per_speaker' ? (ps && ps.active ? ps.added_latency_ms : null)
+        : (st.streams && st.streams[0] && st.streams[0].latency_frames ? st.streams[0].latency_frames * 1000 / st.streams[0].rate : null);
+      if (ms) bits.push('+' + (Math.round(ms * 10) / 10) + ' ms');
+    }
+    return bits;
   }
 
   /* ---------------- settings area (Mods page) ---------------- */
   function settings(api, box) {
     const { ui } = api, h = ui.h;
-    const absent = h('div', { class: 'mods-note' });
+    const absent = h('p', { class: 'mods-note' });
     const status = h('p', { class: 'mods-status' });
     const master = ui.toggle({ title: 'Audio processing (AGC)', sub: 'Leveler, compressor and limiter on the voices you hear. Off = vanilla audio, bit-exact, no added delay.', onChange: v => { api.storage.set('master', v); patch({ enabled: v }, true); } });
     const modePills = [['whole', 'Whole stream'], ['per_speaker', 'Per speaker']].map(([m, label]) => ({ m, b: ui.pill({ label, onClick: () => patch({ mode: m }, true) }) }));
@@ -196,13 +211,12 @@
       const mine = Object.entries(customs()).map(([id, c]) => [c.name, 'user_' + id]).sort((a, b) => a[0].localeCompare(b[0])), sel = selected();
       const sig = JSON.stringify([mine, sel]); if (sig === presetSig) return; presetSig = sig;
       const mk = (key, label, tip) => { const b = ui.pill({ label, onClick: () => patch({ preset: key, ...presetValues(key) }, true), on: key === sel }); b.el.setAttribute('data-preset', key); b.el.title = tip || ''; return b.el; };
-      presetRow.replaceChildren(h('span', { class: 'mods-label' }, 'Preset'), ...Object.entries(PRESETS).map(([k, p]) => mk(k, p.title, p.blurb)), ...mine.map(([name, key]) => mk(key, name, 'Your preset')));
+      presetRow.replaceChildren(...Object.entries(PRESETS).map(([k, p]) => mk(k, p.title, p.blurb)), ...mine.map(([name, key]) => mk(key, name, 'Your preset')));
     }
 
     /* parameters */
     const fields = PARAMS.map(def => paramField(ui, h, def, x => patch({ [def[0]]: x }), x => patch({ [def[0]]: x }, true)));
     const groups = ['Leveler', 'Compressor', 'Limiter'].map(g => ui.section(g, ...fields.filter(f => PARAMS.find(p => p[0] === f.key)[7] === g).map(f => f.el)));
-    const params = h('div', { class: 'aud-params' }, ...groups);
 
     /* meters */
     const mIn = ui.meter({ label: 'Input level', kind: 'in' }), mGr = ui.meter({ label: 'Gain reduction', kind: 'gr' }), mLg = ui.meter({ label: 'Leveler gain', kind: 'lg' });
@@ -239,14 +253,25 @@
     const stock = h('div', {}, stockAgc.el, stockExp.el, stockNone);
     const err = h('p', { class: 'mods-error' });
 
-    const body = h('div', {}, status,
-      ui.section('Mode', h('div', { class: 'mods-row' }, h('span', { class: 'mods-label' }, 'Processing'), ...modePills.map(x => x.b.el)), modeHelp),
-      ui.section('Presets', presetRow, h('div', { class: 'mods-row' }, modified), presetNote, nameRow, presetActs),
-      ui.section('Parameters', ui.note('Edits apply live and are kept by the native module (they survive a client restart).'), params),
-      wholeMeters, speakersBox,
-      ui.section('Per-user settings', userList, userEmpty));
-    const agc = h('div', {}, master.el, body);
-    box.append(agc, absent, ui.section('TeamSpeak playback AGC', stock), err);
+    /* layout: four tabs of boxes (the page lays each ui.section out as a box) */
+    const procBox = ui.section('Master switch', master.el, status);
+    const modeBox = ui.section('Mode', h('div', { class: 'mods-row' }, ...modePills.map(x => x.b.el)), modeHelp);
+    const presetBox = ui.section('Presets', presetRow, h('div', { class: 'mods-row' }, modified), presetNote, nameRow, presetActs);
+    const groupBoxes = groups;
+    const usersBox = ui.section('Per-user settings', ui.note('Right-click a user in the channel tree and choose "Audio..." to set their volume, mute, boost or own AGC values. Saved by identity.'), userList, userEmpty);
+    usersBox.classList.add('mods-span'); speakersBox.classList.add('mods-span');
+    const agcBoxes = [procBox, modeBox, presetBox, ...groupBoxes, wholeMeters, speakersBox, usersBox];   // shown only while the native module answers
+    const dimBoxes = [modeBox, presetBox, ...groupBoxes, wholeMeters, speakersBox];                     // dimmed while the master switch is off
+    const tabs = ui.tabs([
+      { name: 'Processing', content: [procBox, modeBox] },
+      { name: 'Presets', content: [presetBox] },
+      { name: 'Parameters', content: [...groupBoxes, wholeMeters, speakersBox] },
+      { name: 'Per-user', content: [usersBox, ui.section('TeamSpeak playback AGC', stock)] },
+    ]);
+    const resetVoice = ui.button({ label: 'Reset to Voice', kind: 'link', onClick: () => patch({ preset: 'voice', ...PRESETS.voice.values }, true) });
+    const saveAs = ui.button({ label: 'Save as preset…', kind: 'link', onClick: () => { tabs.select('Presets'); bSave.click(); } });
+    const foot = ui.footer(h('span', 'Edits apply live and survive a restart.'), resetVoice, saveAs);
+    box.append(absent, tabs.el, err, foot);
 
     function syncSpeakers() {
       const list = (S.speakers || []).filter(s => s.active || s.frames > 0);
@@ -281,9 +306,10 @@
     }
     view = { syncMeters, syncSpeakers, sync() {
       const ok = S.native === 'ok' && S.cfg, c = S.cfg;
-      agc.hidden = !ok; absent.hidden = !!ok;
+      agcBoxes.forEach(b => { b.hidden = !ok; }); absent.hidden = !!ok; resetVoice.hidden = saveAs.hidden = !ok;
+      tabs.aside.textContent = (statusBits(true) || []).join(' · ');
       absent.textContent = S.native === 'unknown' ? 'Checking for the native module...' :
-        'Native module not loaded (or the launcher\'s injector is not running). The AGC needs the client to be started with launcher/ts6-mod (see superdoc/features/agc.md). Without it the client is vanilla; the two stock settings below still work.';
+        'Native module not loaded (or the launcher\'s injector is not running). The AGC needs the client to be started with launcher/ts6-mod (see superdoc/features/agc.md). Without it the client is vanilla; the two stock settings (tab Per-user) still work.';
       if (ok) {
         master.set(!!c.enabled);
         const st = S.status, ps = st && st.per_speaker;
@@ -295,7 +321,7 @@
           ? 'Each speaker is leveled and limited on its own before the voices are mixed: a loud speaker no longer pushes the others down. Needed for the per-user overrides (boost, bypass, custom AGC). Installs an inline hook the first time you choose it.'
           : 'One leveler/compressor/limiter on everything you hear, all speakers and sounds mixed together. Works everywhere, but one loud speaker lowers the others too.';
         if (c.mode === 'per_speaker' && ps && !ps.hook_installed && c.enabled) status.textContent += ' (this client version is not supported by the per-speaker hook; see the AGC doc)';
-        body.classList.toggle('mods-dim', !c.enabled);
+        dimBoxes.forEach(b => b.classList.toggle('mods-dim', !c.enabled));
         const sel = selected(), vals = sel && presetValues(sel), mod = !!vals && !same(c, vals), isUser = !!sel && isUserKey(sel);
         renderPresets();
         modified.hidden = !mod; bRevert.hidden = !mod; bUpdate.hidden = !(mod && isUser); bRename.hidden = !isUser; bDelete.hidden = !isUser;
@@ -384,7 +410,13 @@
 
   ts6mod.register({
     id: 'audio',
-    title: 'Audio (AGC and per-user audio)',
+    title: 'Audio',
+    group: 'Audio', order: 1,
+    icon: 'M4 9h4l5-4v14l-5-4H4z M16 9a4 4 0 0 1 0 6',
+    summary: 'Leveler, compressor and limiter for the voices you hear, plus per-user volume in the right-click menu.',
+    keywords: ['AGC', 'Automatic gain control', 'Whole stream', 'Per speaker', 'Presets', ...Object.values(PRESETS).map(p => p.title), ...PARAMS.map(p => p[1]),
+      'Leveler', 'Compressor', 'Limiter', 'Live meters', 'Per-user settings', 'Volume', 'Mute', 'Boost', 'Experimental AGC mode', 'TeamSpeak playback AGC'],
+    status: () => (statusBits(false) || []).join(' · '),
     description: 'Automatic gain control for the voices you hear (leveler, compressor, limiter; whole stream or per speaker; presets and every parameter), per-user volume/mute/boost/AGC in the right-click menu, and the two stock TeamSpeak playback AGC options. Switching this mod off also switches the native AGC off.',
     async enable(api) {
       if (offPost) { await offPost; offPost = null; }   // a quick off->on must not read /config before the disable's post has landed

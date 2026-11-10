@@ -15,18 +15,69 @@ underlying mechanics in [ts6-ui-extension-points.md](ts6-ui-extension-points.md)
 - Injected by `tools/cdp/mods-inject.mjs` (bundle built by `tools/cdp/bundle.mjs`): one CDP socket stays open,
   `Page.addScriptToEvaluateOnNewDocument` + `Runtime.evaluate` (never `Page.reload`), plus the binding `ts6modNative` through
   which mods talk to the native control API (see [agc.md](agc.md), "Why"). Idempotent (`window.__ts6mod`). Open the page from
-  code with `__ts6mod.open()`.
+  code with `__ts6mod.open()` (or `__ts6mod.open(<mod id>, <tab>)` for one mod's page).
 
-On the page each mod is a card: its switch (title and description from `register`), and, while on, its `settings(api, container)`
-area underneath. Switches are stored in the bridge blob `mods` ([ts6-mod-api.md](ts6-mod-api.md), "Persistence"); the page makes no
-request and holds no timer until it is shown.
+Switches are stored in the bridge blob `mods` ([ts6-mod-api.md](ts6-mod-api.md), "Persistence"); the page makes no request and holds
+no timer until it is shown.
+
+## Page layout: overview cards + one page per mod
+
+`panel/core/page.js` renders two views in place inside the stock settings frame (`anchors.js:addSettingsPage`, scroll area + card):
+
+- **Overview** (`renderGrid`): header "Mods", "N of M on · everything off = stock client", a search field ("Search mods and settings").
+  Then a responsive grid (`.mods-grid`, `repeat(auto-fill, minmax(250px, 1fr))`) with one card (`[data-mod-card="<id>"]`) per registered
+  mod: icon tile (`register.icon`, an SVG path; fallback puzzle piece), the name as a button that opens the mod, the mod's switch (top right,
+  works without opening; the switch is TS's own toggle markup), the one-line `summary` (fallback `description`, clamped to 3 lines, full
+  description as tooltip), and a footer with the status line ("Off", "On", "On · <status()>", "On · No settings", "Could not enable") and
+  "Settings ›". Enabled cards get a faint accent tint. Card order: groups Audio, Interface, Server & network, Chat & files, Tools, then
+  other groups, then mods without a group ("Other"); inside a group by `order`, then name. The status lines are refreshed every 2 s while
+  the overview is shown (`status()` hooks must be cheap reads).
+- **Search** (`match`): a card stays when the query is in its name, summary, description or group, or in one of its setting labels:
+  `register.keywords` plus the labels harvested from the mod's page the last time it was shown (`harvest`: box titles, field labels,
+  toggle titles, pills, buttons, tab names). A card matched by a label names it in its status line ("Matches “Ping limit”"). No match:
+  "No mod or setting matches …". Typing while a mod page is open returns to the overview.
+- **Mod page** (`renderDetail`, `[data-mod-page="<id>"]`): "‹ All mods", a header (icon tile, name, full description, the mod's switch),
+  then the settings area `.mods-mod-body[data-ts6mod="<id>"]`, which is a box grid (`.mods-boxes`, `repeat(auto-fill, minmax(330px, 1fr))`).
+  The mod's `settings(api, container)` renders into it; afterwards `boxify` turns every `ui.section` into a box, groups loose top-level
+  nodes into untitled boxes, and leaves tabs (`ui.tabs`), the footer (`ui.footer`) and top-level notes / errors / status lines as
+  full-width strips. `addSection` blocks are boxes too. Off: "This mod is off. Its settings are kept; switch it on to use them." (as
+  before, settings only render while the mod is on, because `settings()` gets the enabled mod's scoped api). No settings at all: "This
+  mod has no settings." Toggling the mod on its page re-renders the area; switching it off removes it (D7).
+- **Memory**: the open mod and the search reset when the Mods category is left (returning shows the overview); the last tab per mod is
+  kept for the session. `__ts6mod.open(id?, tab?)` opens the overview or a mod page (tests: `ctx.openModsPage(id, tab)`);
+  `__ts6mod.page` = `{view(), openMod(id, tab), back(), search(q), tab()}` for tests.
+- **Compact boxes**: inside a box sliders are one row (label · slider · value box with unit, fixed 92 px value column), toggle rows lose
+  the stock 24 px gap, long toggle subtitles (> 90 characters) and slider/param help texts become hover tooltips with a small "?" mark
+  (`ui.toggle`/`ui.slider`, `LONG_SUB`); short subtitles and `ui.note`s stay visible.
+- **Theme**: surfaces are `--mods-surface` / `--mods-surface-2` / `--mods-surface-on` (the theme's text colour or accent mixed into
+  transparency with `color-mix`, defined on `.mods-card` in `core.css`), so the cards are a shade lighter on dark themes and darker on
+  light ones; all text colours are `--mods-*` tokens. Checked in the default theme and graphite at 1920 and 960 px.
+
+Why (decision, the user reviewed mockups): the old page was one long list of every mod and every option, hard to navigate. Chosen: an
+overview of cards (switch usable without opening) and, on click, that mod's own page in place (no modal), its settings as boxes in a
+responsive grid; tabs only for Audio (Processing · Presets · Parameters · Per-user), every other mod is short enough to show its boxes
+directly. Rejected: a drop-down mod selector, a left-hand mod list / two-pane view, and a cards/list view switch. At narrow widths
+(960 px window) the grids simply drop to fewer columns and the boxes stack. The framework contract stays small and generic (optional
+register fields and `ui.tabs`, see [ts6-mod-api.md](ts6-mod-api.md)), so third-party mods without the new fields still get a card
+(fallback icon, group "Other").
+
+### Test procedure (Mods page)
+
+Automated, `tools/test/core-tests.mjs`: "Mods page lists mods with their switch state" (one card per registered mod, each card switch
+shows its mod's state) and "Mods page (card switch, mod page and back, tabs, off note, search, audio tabs)": a throw-away mod with
+group/icon/summary/keywords/status, a plain section and two tabs; checks the Off status, the card switch enabling it without leaving the
+overview, the `status()` text and tint, no settings DOM on the overview, opening by the card name, boxes, tab bar + aside, tab switch
+swapping the panels, back link (settings DOM removed), the remembered tab, the page switch (off note, settings removed / back), the
+overview after leaving the category, search by keyword, by a harvested label, by another mod's title and with no match, and the audio
+mod's four tabs. "slot: settings" covers `settings()` + `addSection` on the mod page and the scoped timers. By hand: the Mods page
+section of [testing-guide.md](testing-guide.md).
 
 ## Audio mod
 
 `panel/mods/audio/` (+ `panel/core/x-audio.js`): the AGC page (master switch, whole-stream / per-speaker mode, every DSP parameter,
 built-in and own presets, live meters, per-speaker list, per-user list), the per-user "Audio..." popover and the two stock TeamSpeak
-playback AGC toggles. Everything is in the mod's area on the Mods page; polling (meters 120 ms, status 2 s) runs in the settings scope, i.e.
-only while the page is shown and the mod is on. Details, presets and the control API: [agc.md](agc.md).
+playback AGC toggles. Everything is on the mod's own page (four tabs, see [agc.md](agc.md)); polling (meters 120 ms, status 2 s) runs in the settings scope, i.e.
+only while its page is shown and the mod is on. Details, presets and the control API: [agc.md](agc.md).
 **The mod switch also switches the native AGC**: off = native `enabled:false` (persisted by the native module), on = the user's own master
 choice is restored (vanilla rule, see [agc.md](agc.md)).
 

@@ -1,6 +1,6 @@
-# Mod `files`: compress large images
+# Mod `files`: compress images
 
-Switch on the Mods page ("Compress large images"), **default off**. Images over the upload limit are scaled down to a maximum
+Switch on the mod's card (Settings -> Mods, "Compress images"), **default off**; its page holds the boxes Where, Size and Format. Images over the upload limit are scaled down to a maximum
 resolution and re-encoded at the **highest quality that still fits** (binary search), in the page, with the browser's own codecs
 (`createImageBitmap(file, {imageOrientation: 'from-image'})` plus `OffscreenCanvas.convertToBlob`). No system dependency. A toast
 reports original -> new size, resolution, format and quality. API background: [ts6-mod-api.md](ts6-mod-api.md). Code:
@@ -27,7 +27,7 @@ mod covers the Files tab, with the same threshold (the Files tab has no client l
 `Compress images larger than`", default 5 MB). The chat routes only matter in TS6 account chats; they could not be exercised against a real
 chat room here (no account), so they are verified up to the composer's preview chip (what gets uploaded when the message is sent).
 
-## Settings
+## Settings (Settings -> Mods -> Compress images card -> its page)
 
 | Setting | Default | Meaning |
 |---|---|---|

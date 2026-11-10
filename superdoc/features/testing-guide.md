@@ -9,13 +9,26 @@ details: [agc.md](agc.md), [mods-panel.md](mods-panel.md), [mod-net.md](mod-net.
 
 - Close the TeamSpeak client, then run `launcher/ts6-mod` from the repo root (or start the "TeamSpeak (modded)" desktop entry built from
   `teamspeak-6-mods.desktop`). Optional: a server URL after the command to auto-connect.
-- Open **Settings -> Mods**. All mods start **off**; switch on the one you test.
+- Open **Settings -> Mods**: a card per mod. All mods start **off**; switch on the one you test with the switch on its card, then open
+  its own page with the card name or "Settings ›" ("‹ All mods" goes back; the search field finds mods by name and by setting label).
 - Back to vanilla: switch every mod off, or close the client and start it the normal way (without the launcher).
 - Set-up for most items: connect to a server and have at least one other person (or a second client) in your channel.
 
+## The Mods page itself
+
+1. Settings -> Mods. Expect: header "Mods", "N of 9 on · everything off = stock client", a search field, one card per mod (icon, name,
+   switch, one-line description, status line, "Settings ›"). Enabled cards are slightly tinted.
+2. Flip a card's switch. Expect: the mod goes on/off without leaving the overview; the status line changes ("On · …" / "Off").
+3. Click a card name. Expect: the mod's page replaces the grid (back link, header with its switch, settings in boxes; Audio has tabs).
+   Switch it off there: a note says it is off and its settings are kept. "‹ All mods" returns to the grid. Leaving the Mods category and
+   coming back shows the grid again.
+4. Type "ping limit" in the search. Expect: only "Connection quality" stays, its status line names the matching setting; a nonsense word
+   shows "No mod or setting matches".
+5. Make the window narrow (about 960 px). Expect: one column of cards, boxes stack, nothing cut off.
+
 ## audio (AGC and per-user audio)
 
-Settings -> Mods -> Audio. Needs the PulseAudio/PipeWire-pulse backend.
+Settings -> Mods -> Audio card (tabs Processing, Presets, Parameters, Per-user). Needs the PulseAudio/PipeWire-pulse backend.
 
 1. **Whole stream.** Mode "whole stream", master switch on, preset Voice. Let someone speak loudly, then quietly.
    Expect: status line says processing; the meters move (input level, gain reduction, leveler gain); quiet speech is lifted, loud speech
@@ -125,6 +138,8 @@ Switch themes (Settings -> Appearance, or the theme mod's picker) and look at th
 and feed, layout tabs, power palette, audio popover, toasts. Expect: text readable, colours follow the theme (mods use the theme's own colours),
 nothing clipped or overlapping in either the default theme or your extension themes; also at a narrow window width (the net HUD is the widest piece:
 turn off its bandwidth part).
+
+Isolated test clients must be launched with `--ozone-platform=x11 --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling` (`tools/rig/rig:CLIENT_FLAGS` passes them). A hidden or backgrounded client never runs `requestAnimationFrame`, so tests that wait on it fail (audio popover closes, layout sidebar collapse, slot modal `close()`, contextMenu item without icon).
 
 Note on the runner's vanilla step (`tools/test/run-all.mjs`): it first waits until no native request has been made for 1.2 s. The last core
 test hot-reloads the core, and the new core's one-shot audio vanilla guard (`panel/core/x-audio.js:vanillaGuard`, one `GET /config` per page

@@ -16,7 +16,7 @@ see [ts6-mod-api.md](ts6-mod-api.md) (slots, `api.chatInput`, core extension fil
 - A delay between parts, default 0 ms.
 - Text that fits the server limit is sent untouched (same path as without the mod).
 
-## Settings (Mods page, shown while the mod is on)
+## Settings (Settings -> Mods -> Chat card -> its page, box Splitting; shown while the mod is on)
 
 | Key (`api.storage`) | Default | Meaning |
 |---|---|---|

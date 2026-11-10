@@ -30,17 +30,30 @@ optional `test.mjs` (see "Tests"). `<name>` is the directory name; the mod `id` 
 
 ```js
 ts6mod.register({
-  id: 'hello', title: 'Hello', description: 'Shows what the API can do.',   // shown on the Mods page with its switch
+  id: 'hello', title: 'Hello', description: 'Shows what the API can do.',   // card name; description = header of the mod's page
+  // optional card metadata (all may be left out):
+  group: 'Tools', order: 1,          // card order: Audio, Interface, Server & network, Chat & files, Tools, other groups, then "Other"
+  icon: 'M4 5h16v11H9l-5 4z',        // SVG path (24x24 viewBox, stroked); fallback: a puzzle piece
+  summary: 'One line for the card.', // fallback: description
+  keywords: ['Shout'],               // setting labels the search finds before the page was ever opened
+  status: api => 'loud',             // card status line while on ("On · loud"); cheap reads only, called every 2 s on the overview
   enable(api) {                      // runs when the switch goes on (default: off); may be async
     api.topBar.add({ title: 'Hello', icon: 'settings-addons', onClick: () => api.toast('Hello', 'It works') });
   },
   disable() {},                      // optional; only for state outside the api (the ledger undoes the rest)
-  settings(api, container) {         // optional: UI shown under the switch on the Mods page while the mod is on
-    container.append(api.ui.note('Settings go here'));
+  settings(api, container) {         // optional: the mod's own page on the Mods page while the mod is on
+    container.append(api.ui.section('Box title', api.ui.note('Settings go here')));   // every ui.section becomes a box
     return () => {};                 // optional cleanup, called when the page is left
   },
 });
 ```
+
+**How the Mods page lays out a mod** (`panel/core/page.js`, details in [mods-panel.md](mods-panel.md)): the overview shows one card per
+mod built from the fields above; the mod's page is a responsive grid of boxes (min 330 px). After `settings()` returns, `page.js:boxify`
+makes each top-level `api.ui.section(title, ...)` a box, wraps other loose top-level nodes into untitled boxes, and keeps `api.ui.tabs`,
+`api.ui.footer` and top-level `api.ui.note` / `.mods-error` / `.mods-status` elements as full-width strips. Add the class `mods-span` to a
+section to make its box span the whole row (wide tables, e.g. the audio speaker list). So: group related controls with `ui.section`; a mod
+with many settings may split them into tabs. Long toggle subtitles (> 90 characters) and slider `help` become hover tooltips.
 
 Rules: (1) every mod defaults to **off**; (2) mods contain **no raw TS names**: this lint must stay empty and is step 1 of
 run-all: `grep -rnE '(^|[^a-zA-Z0-9_])tsv?-|__vue__|tsclient_internal' panel/mods/`. Icon names such as `'settings-addons'` are
@@ -56,13 +69,17 @@ A minimal mod from zero, using only the api. Samples to copy from: `panel/mods/d
 1. **Folder.** `panel/mods/hello/` with `index.js` (the folder name is the mod id). Everything in `panel/mods/*/index.js` is bundled
    automatically (`tools/cdp/bundle.mjs:buildBundle`); a `style.css` next to it is added on enable and removed on disable.
 2. **Register.** `index.js` calls `ts6mod.register({id: 'hello', title, description, enable(api), settings?(api, container)})`.
-   The Mods page shows a card with a switch (default off). Nothing runs until the user switches it on.
+   The Mods page shows a card with a switch (default off). Nothing runs until the user switches it on. Give the card an `icon` (SVG path),
+   a `group`, a one-line `summary` and, if useful, a `status(api)` line and search `keywords` (see "Writing a mod"); without them the card
+   still works (puzzle icon, group "Other", the description as summary).
 3. **Use a slot** in `enable(api)`: `api.topBar.add({title, icon, onClick})`, `api.sidebar.addIcon`, `api.contextMenu.client.add`,
    `api.treeRow.decorate`, `api.chatInput.onBeforeSend`, `api.toast` (table above). Timers, listeners and observers only through
    `api.interval/listen/observe/onDom`.
 4. **Settings UI.** `api.storage.get(key, default)` / `.set(key, value)` persist; build the controls in `settings(api, container)` with
    the kit (`api.ui.toggle({title, sub, checked, onChange})`, `api.ui.slider({label, min, max, step, unit, value, onInput})`,
-   `api.ui.note`, `api.ui.button`, ...), as `panel/mods/net/index.js` does. Style only with the `--mods-*` tokens.
+   `api.ui.note`, `api.ui.button`, ...), grouped into boxes with `api.ui.section(title, ...controls)`, as `panel/mods/net/index.js` does.
+   Many settings? Split them into tabs: `container.append(api.ui.tabs([{name: 'One', content: [sectionA, sectionB]}, {name: 'Two',
+   render: panel => panel.append(...)}]).el)` (`panel/mods/audio/index.js:settings`). Style only with the `--mods-*` tokens.
 5. **Cleanup is automatic.** Whatever went through the api is undone when the switch goes off; write `disable()` only for state outside
    the api. Do not touch the DOM or timers directly in `enable`.
 6. **A TS name needed?** Do not put it in the mod (the lint fails). Add `panel/core/x-hello.js` (an extension file, see below): define an
@@ -77,11 +94,14 @@ A minimal mod from zero, using only the api. Samples to copy from: `panel/mods/d
 // panel/mods/hello/index.js
 ts6mod.register({
   id: 'hello', title: 'Hello', description: 'Adds a button to the top bar.',
+  group: 'Tools', icon: 'M4 5h16v11H9l-5 4z', summary: 'A top bar button that says hello.',
+  status: api => (api.storage.get('shout', false) ? 'shouting' : ''),
   enable(api) {
     api.topBar.add({ title: 'Hello', icon: 'settings-addons', onClick: () => api.toast('Hello', api.storage.get('text', 'It works')) });
   },
   settings(api, container) {
-    container.append(api.ui.toggle({ title: 'Shout', sub: 'Use capitals in the toast.', checked: !!api.storage.get('shout', false), onChange: v => api.storage.set('shout', v) }).el);
+    container.append(api.ui.section('Toast',
+      api.ui.toggle({ title: 'Shout', sub: 'Use capitals in the toast.', checked: !!api.storage.get('shout', false), onChange: v => api.storage.set('shout', v) }).el));
   },
 });
 ```
@@ -104,9 +124,10 @@ Status column: all slots below were run against the live client by `tools/test/c
 | `api.chatInput.available() / limit() / element() / text() / setText(t)` | the active composer (the focused one, else the first): length limit (8192 here), the editable element, its text | reads `maxInputLength`, `msg` of the composer component | yes |
 | `api.toast(title, text, opts?)` | local notification (notification center + bell) | `createGlobalNotification(plainObject)`; removed by tag on disable. Whether a transient popup is drawn is not confirmed visually | yes (enters/leaves the notification center) |
 | `api.modal.show({title, render(container, close), onClose})` -> `{close()}` | the app's own modal overlay; closing on disable | `events.onInvokeModalOverlayEmitter.fire` | yes |
-| `api.settings.addSection({title, render(container, scopedApi)})` | extra titled block in this mod's area of the Mods page | page.js | yes |
+| `api.settings.addSection({title, render(container, scopedApi)})` | extra box on this mod's page on the Mods page | page.js | yes |
 | `api.settings.addPage({key, title, icon, render(container, scopedApi)})` | a separate category in the client's Settings navigation; the container sits in the stock page frame (scroll area + readable width), so long pages scroll like stock ones | push into the Settings mode list + rebuild nav | yes |
-| `api.settings.open()` | open the Mods page | router | yes |
+| `api.settings.open()` | open the Mods page (overview) | router | yes |
+| `api.settings.show(tab?)` | open this mod's own page on the Mods page, optionally on a tab (the net popover's "Settings" link) | `page.js:core.open` | yes (core-tests via `__ts6mod.open`) |
 | `api.events.on(name, cb)` | native -> UI events (`talkStatusChanged`, `clientMoved`, `textMessage`, ...) | one dispatcher per event name over `tsclient_internal.on` (it has no "off", so un-subscribing removes the callback from the dispatcher) | yes |
 | `api.bridge.call(name, ...args)` | promisified native bridge call: resolves with the value (an array if the callback carries more than one value), rejects with `error.status` on non-zero status. Methods without a callback (`saveJsonBlob`, `deleteJsonBlob`) are detected and called without one | `tsclient_internal[name]` | yes |
 | `api.state.connections() / current() / ownClient() / channel() / channels() / clients({all})` | read helpers over the displayed connection: plain summaries plus `.model` (the live Vue model) | `appController.connections`, `serverConnectionHandler` | yes |
@@ -118,7 +139,8 @@ Status column: all slots below were run against the live client by `tools/test/c
 | `api.addStyle(css)` | `<style>` removed on disable (a mod's `style.css` is added the same way) | - | yes |
 | `api.el(tag, props, ...kids)` | create a DOM node marked as this mod's (`data-ts6mod`); props: `class`, `on:{event:fn}`, `style`, attributes/properties | - | yes |
 | `api.icon(name)` | the TS icon element (`<ts-icon>` needs Vue, so it is rendered through a tiny Vue instance; retried while the UI loads) | `Vue` + `ts-icon` | yes |
-| `api.ui.*` | widget kit for settings areas: `toggle`, `row`, `subtitle`, `note`, `section`, `row2`, `button`, `pill`, `slider`, `meter`, `h` | TS settings markup for `toggle`, our `mods-*` classes for the rest | yes (audio mod) |
+| `api.ui.*` | widget kit for settings areas: `toggle({title, sub, help?, checked, onChange})`, `row`, `subtitle`, `note`, `section(title, ...kids)` (= a box on the mod page), `row2`, `button`, `pill`, `slider({label, min, max, step, unit, value, help?, onInput, onCommit})`, `meter`, `footer(...kids)` (full-width line under the boxes; links right-aligned), `tabs`, `h` | TS settings markup for `toggle`, our `mods-*` classes for the rest; a long toggle `sub` (> 90 chars) or `help` becomes a tooltip with a "?" mark | yes (audio mod, core-tests) |
+| `api.ui.tabs([{name, content: Node\|Node[]} \| {name, render(panel)}], {aside?, onSelect?})` -> `{el, select(name), current(), panel(name), aside}` | tab bar + panels; every panel is built at once and laid out as boxes, only the selected one is displayed; `aside` (text/Node, updatable via the returned `aside` element) sits right-aligned in the bar; the last tab is remembered per mod for the session | `page.js:ui.tabs` (the api version passes `key: <mod id>`) | yes (core-tests, audio) |
 | `api.interval(fn, ms)`, `api.timeout(fn, ms)` | timers, cleared on disable | - | yes |
 | `api.listen(target, type, fn, opts)` | DOM listener, removed on disable | - | yes |
 | `api.observe(target, opts, cb)` | `MutationObserver`, disconnected on disable | - | yes |
@@ -164,7 +186,7 @@ Mod styles use only the tokens `--mods-fg`, `--mods-muted`, `--mods-accent`, `--
 (`themeTokens`) maps them onto TS's own custom properties (`--ts-primary-font-color`, `--ts-primary-accent-color`,
 `--ts-error-color`, ...), so default and custom themes (which override those properties) both look right. The tokens and the
 core stylesheet exist only while a mod is enabled or the Mods page is shown. The settings widgets (`api.ui.toggle`) reuse TS's
-own markup/classes (via anchors), the rest are `mods-*` classes.
+own markup/classes (via anchors), the rest are `mods-*` classes. Inside the Mods page (`.mods-card`) `core.css` also defines the derived surfaces `--mods-surface`, `--mods-surface-2`, `--mods-surface-on` and `--mods-soft-line` (the text colour or accent mixed into transparency with `color-mix`) for cards and boxes.
 
 ## Anchors
 
@@ -251,6 +273,10 @@ real client once posted test messages and moved the user on a real server; the g
 care. The full coverage needs an isolated client (`TS6MOD_PROFILE_DIR`) connected to a local test server; see
 [test-rig.md](test-rig.md).
 
+Isolated test clients must be launched with `--ozone-platform=x11 --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling` (`tools/rig/rig:CLIENT_FLAGS` passes them). A hidden or backgrounded client never runs `requestAnimationFrame`, so tests that wait on it fail (audio popover closes, layout sidebar collapse, slot modal `close()`, contextMenu item without icon).
+
+The tests also have to hold on a real, busy profile (several mods already on, many channels, own chats open): count only nodes of your own mod (`[data-ts6mod="<id>"]`, e.g. tree-row decorations), only tree rows rendered inside the scroller, and wait for a node to exist before clicking it (pages and tabs render a moment after `ctx.openModsPage` returns).
+
 **`test.mjs` contract:** `export default async function (ctx) { ... }`; throwing or a failed assert = FAIL. `ctx`:
 
 | Member | Meaning |
@@ -260,7 +286,7 @@ care. The full coverage needs an isolated client (`TS6MOD_PROFILE_DIR`) connecte
 | `ctx.assert(cond, msg)` / `ctx.equal(actual, expected, msg)` | assertions (`equal` is deep via JSON) |
 | `ctx.assertClean(id)` | the mod is off and left no trace: empty ledger (no timers/listeners/observers/slots/...), no `[data-ts6mod="id"]` node |
 | `ctx.waitFor(expr, msg, ms)` | poll until truthy, else fail with `msg` |
-| `ctx.openModsPage()` / `ctx.restoreRoute()` | navigate to the Mods page / back to where the test started |
+| `ctx.openModsPage(id?, tab?)` / `ctx.restoreRoute()` | navigate to the Mods page: the overview, or mod `id`'s own page (needed to see its settings), optionally on tab `tab`; resolves once that view is shown / back to where the test started |
 | `ctx.pressEscape()` | trusted Escape key (closes menus that ignore synthetic events) |
 | `ctx.trace()` | core diagnostics: marked DOM, style/observer state, native request count, ledgers, extensions, slots, event subscriptions |
 | `ctx.onTestServer()` | true only when every connection is to 127.0.0.1 / localhost / ::1: gate every server-side action on it |
@@ -270,7 +296,7 @@ care. The full coverage needs an isolated client (`TS6MOD_PROFILE_DIR`) connecte
 
 Test files live inside `panel/mods/<name>/`, so they are covered by the lint: use `__ts6mod.*` (core diagnostics) and the mod's own
 marked DOM (`[data-ts6mod="<id>"]`), never TS names. Page-side core handles for tests: `__ts6mod.trace()`, `.ledger(id)`,
-`.list()`, `.setEnabled(id, on, {persist})`, `.route()`, `.goto(path)`, `.open()`, `.anchors.check()`.
+`.list()`, `.setEnabled(id, on, {persist})`, `.route()`, `.goto(path)`, `.open(id?, tab?)`, `.page` (`view()`, `openMod`, `back`, `search(q)`, `tab()`), `.anchors.check()`.
 
 ## Launcher, injector, hot reload
 

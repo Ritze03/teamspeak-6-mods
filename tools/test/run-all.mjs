@@ -14,7 +14,8 @@
 //   ctx.assert(cond, msg) / ctx.equal(actual, expected, msg)   (deep equality for arrays/objects)
 //   ctx.assertClean(id)       the mod is off and left no trace: nothing in its cleanup ledger, no [data-ts6mod="id"] node
 //   ctx.waitFor(expr, msg, ms=5000)    poll an expression until truthy, else fail with msg
-//   ctx.openModsPage() / ctx.restoreRoute()   navigate to the Mods settings page / back to where the test started
+//   ctx.openModsPage(id?, tab?) / ctx.restoreRoute()   navigate to the Mods page (overview, or mod <id>'s own page, optionally
+//                             on its tab <tab>) / back to where the test started
 //   ctx.pressEscape()         trusted Escape key (closes menus/popups that ignore synthetic events)
 //   ctx.sleep(ms), ctx.log(text), ctx.trace()  (core diagnostics), ctx.controlPort, ctx.cdpPort, ctx.cdp (raw CDP client)
 //   ctx.onTestServer()        true only when every connection of the client goes to the LOCAL test server (127.0.0.1 / localhost).
@@ -146,7 +147,13 @@ function makeCtx(name) {
     },
     trace: () => ev('__ts6mod.trace()'),
     async pressEscape() { for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }); await sleep(300); },   // trusted key event, closes open menus/popups
-    async openModsPage() { await ev('__ts6mod.open()'); await waitFor(`__ts6mod.route().fullPath.includes('TS6Mods')`, 'Mods page route'); await sleep(300); },
+    async openModsPage(id, tab) {   // the overview, or (with id) that mod's own page, optionally on one of its tabs
+      await ev(`__ts6mod.open(${JSON.stringify(id || null)}, ${JSON.stringify(tab || null)})`);
+      await waitFor(`__ts6mod.route().fullPath.includes('TS6Mods')`, 'Mods page route');
+      await waitFor(id ? `!!document.querySelector('[data-mod-page="${id}"]')` + (tab ? ` && __ts6mod.page.tab() === ${JSON.stringify(tab)}` : '') : `__ts6mod.page.view() === 'grid'`,
+        id ? `page of mod ${id}` + (tab ? ', tab ' + tab : '') : 'Mods overview');
+      await sleep(300);
+    },
     async restoreRoute() { await ev(`__ts6mod.goto(${JSON.stringify(startRoute)})`); await waitFor(`__ts6mod.route().fullPath === ${JSON.stringify(startRoute)}`, 'route restored'); await sleep(200); },
   };
   return { c, touched };

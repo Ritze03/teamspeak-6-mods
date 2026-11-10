@@ -56,6 +56,11 @@
   ts6mod.register({
     id: 'power',
     title: 'Power tools',
+    group: 'Tools', order: 1,
+    icon: 'M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z',
+    summary: 'Command palette (Ctrl+K) to jump to channels and users, copy-ID entries in right-click menus, hidden developer toggles.',
+    keywords: ['Command palette', 'Shortcut', 'Copy entries in the right-click menus', 'Hidden developer toggles', 'Copy ID'],
+    status: api => 'Palette ' + api.storage.get('hotkey', DEFAULT_HOTKEY),
     description: 'Copy-ID entries in the right-click menus, a command palette (Ctrl+K) to jump, join and toggle, and an unlocker for the client\'s hidden developer toggles.',
 
     enable(api) {

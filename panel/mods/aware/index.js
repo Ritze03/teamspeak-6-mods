@@ -4,6 +4,11 @@
 ts6mod.register({
   id: 'aware',
   title: 'Server awareness',
+  group: 'Server & network', order: 2,
+  icon: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z',
+  summary: 'Talking badges on channels, idle times next to users, and a join / leave feed in the title bar.',
+  keywords: ['Channel activity badges', 'Activity fade time', 'Idle probe', 'Seconds between requests', 'Show idle from', 'Join / leave feed', 'Feed notifications', 'Entries kept'],
+  status: api => { const A = api.ext.aware; if (!A) return ''; const c = A.cfg(); return [c.badges ? 'Badges' : '', c.idle ? 'Idle' : '', c.feed ? 'Feed' : ''].filter(Boolean).join(', '); },
   description: 'Activity badges on channels (who is talking, recent activity), idle time of users in expanded channels (opt-in: polls the server), and a join / leave / move feed.',
   enable(api) {
     const DEF = { badges: true, idle: false, feed: true, toasts: false, idleInterval: 5, idleMin: 60, fade: 30, feedMax: 50 };
@@ -119,14 +124,17 @@ ts6mod.register({
     const tgl = (key, title, sub, restart) => { const t = ui.toggle({ title, sub, checked: !!c[key], onChange: v => set(key, v, restart) }); return t.el; };
     const sl = (key, label, min, max, step, unit, help, feature) => ui.slider({ label, min, max, step, unit, value: c[key], help, onCommit: v => set(key, v, feature), onInput: v => set(key, v, feature) }).el;
     box.append(
-      tgl('badges', 'Channel activity badges', 'A note with the number of people talking, or a fading dot after someone talked, on the channel row. Only channels you are subscribed to report activity.'),
-      sl('fade', 'Activity fade time', 5, 300, 5, 's', 'How long the dot stays after the last talk.', 'badges'),
-      tgl('idle', 'Idle probe (polls the server)', 'Shows "idle 12m" next to users of expanded channels. Idle time only exists as the answer to a per-user request, so this sends one request per interval. Off = no requests at all.'),
-      sl('idleInterval', 'Seconds between requests', 1, 60, 1, 's', 'One request in total per interval, round-robin over the users in expanded channels.', 'idle'),
-      sl('idleMin', 'Show idle from', 0, 1800, 30, 's', 'Hide the label for users who were active more recently than this.', 'idle'),
-      tgl('feed', 'Join / leave feed', 'A top bar button with a list of joins, leaves, moves and disconnects (kept in memory only).'),
-      tgl('toasts', 'Feed notifications', 'Also show every feed entry as a notification.', 'feed'),
-      sl('feedMax', 'Entries kept', 10, 200, 10, '', 'Oldest entries are dropped.', 'feed'),
+      ui.section('Channel activity',
+        tgl('badges', 'Channel activity badges', 'A note with the number of people talking, or a fading dot after someone talked, on the channel row. Only channels you are subscribed to report activity.'),
+        sl('fade', 'Activity fade time', 5, 300, 5, 's', 'How long the dot stays after the last talk.', 'badges')),
+      ui.section('Idle times',
+        tgl('idle', 'Idle probe (polls the server)', 'Shows "idle 12m" next to users of expanded channels. Idle time only exists as the answer to a per-user request, so this sends one request per interval. Off = no requests at all.'),
+        sl('idleInterval', 'Seconds between requests', 1, 60, 1, 's', 'One request in total per interval, round-robin over the users in expanded channels.', 'idle'),
+        sl('idleMin', 'Show idle from', 0, 1800, 30, 's', 'Hide the label for users who were active more recently than this.', 'idle')),
+      ui.section('Join / leave feed',
+        tgl('feed', 'Join / leave feed', 'A top bar button with a list of joins, leaves, moves and disconnects (kept in memory only).'),
+        tgl('toasts', 'Feed notifications', 'Also show every feed entry as a notification.', 'feed'),
+        sl('feedMax', 'Entries kept', 10, 200, 10, '', 'Oldest entries are dropped.', 'feed')),
     );
     return () => {};
   },

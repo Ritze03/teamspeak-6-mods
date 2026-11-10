@@ -43,11 +43,10 @@
   function snapshot() {
     const cur = safe(() => app().currentActivityIdentifier, '');
     const its = items();
-    const chatActive = its.some(i => i.type !== 'connection' && safe(() => i.isActive, false));
     return its.map(it => {
       const server = it.type === 'connection';
       return { id: String(it.identifier), kind: server ? 'server' : 'chat', title: String(safe(() => it.displayName, '') || it.identifier),
-        unread: unreadOf(it), active: server ? (!chatActive && it.identifier === cur) : !!safe(() => it.isActive, false), closable: !server };
+        unread: unreadOf(it), active: server ? it.identifier === cur : !!safe(() => it.isActive, false), closable: !server };
     });
   }
   const byId = id => items().find(i => String(i.identifier) === id);

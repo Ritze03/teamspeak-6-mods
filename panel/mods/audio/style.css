@@ -19,5 +19,4 @@
 .aud-umeters .mods-meter { grid-template-columns: 110px 1fr 80px; }
 @media (max-width: 700px) { .aud-sprow { grid-template-columns: 1fr; } .aud-pop { min-width: 0; } }
 [data-ts6mod="audio"] [hidden] { display: none !important; }
-[data-ts6mod="audio"] .mods-note { font-size: 13px; }
 .aud-pop { text-align: left; }

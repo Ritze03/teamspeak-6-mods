@@ -55,7 +55,7 @@ export default async function (ctx) {
     await ctx.eval(`delete __ts6mod.store().settings.net`);
   }
 
-  await ctx.openModsPage();
+  await ctx.openModsPage('net');
   await ctx.waitFor(`/Update interval/.test(document.body.textContent) && /Show bandwidth/.test(document.body.textContent)`, 'settings listed on the Mods page');
   if (online) {
     // the bandwidth switch of the settings area hides/shows the bandwidth part of the HUD live (clicked twice: value restored)

@@ -24,6 +24,9 @@
       if (!strip) return;
       const tabs = L.chats.list().filter(t => (t.kind === 'server' ? S.serverTabs : S.chatTabs));
       const servers = tabs.filter(t => t.kind === 'server'), chats = tabs.filter(t => t.kind === 'chat');
+      // a shown chat tab that is the open view takes the highlight from the server tab; with chat tabs off the server tab keeps it
+      // (the own channel's chat counts as active whenever that channel is showing, which must not hide the server tab)
+      if (chats.some(t => t.active)) servers.forEach(t => { t.active = false; });
       const key = JSON.stringify(tabs);
       if (strip.dataset.key === key) return;
       strip.dataset.key = key;
@@ -88,18 +91,24 @@
     const srvT = ui.toggle({ title: 'Servers as tabs too', sub: 'Adds a tab for every connected server in front of the chat tabs.', checked: S.serverTabs, onChange: v => M.setTabs('serverTabs', v) });
     const dens = ui.slider({ label: 'Channel tree row height', min: 60, max: 140, step: 5, unit: '%', value: S.density, help: '100% is the stock spacing; lower is more compact, higher more comfortable. Applies immediately.', onInput: v => M.setDensity(v) });
     const reset = ui.button({ label: 'Reset to 100%', kind: 'link', onClick: () => { M.setDensity(100); dens.set(100); } });
-    box.append(h('h4', { class: 'mods-subtitle' }, 'Tabs'), chatT.el, srvT.el, h('h4', { class: 'mods-subtitle' }, 'Density'), dens.el, h('div', { class: 'mods-row' }, reset),
-      h('h4', { class: 'mods-subtitle' }, 'Hide parts of the interface'));
-    let group = '';
+    box.append(ui.section('Tabs', chatT.el, srvT.el), ui.section('Density', dens.el, h('div', { class: 'mods-row' }, reset)));
+    /* one box per group of hide switches ("Hide: Server view", ...); the help text is the hover tooltip */
+    const groups = new Map();
     for (const it of L.declutter.items) {
-      if (it.group !== group) { group = it.group; box.append(h('p', { class: 'mods-note' }, group)); }
-      box.append(ui.toggle({ title: it.label, sub: it.help, checked: !!S.hide[it.key], onChange: v => M.setHide(it.key, v) }).el);
+      if (!groups.has(it.group)) { groups.set(it.group, ui.section('Hide: ' + it.group)); box.append(groups.get(it.group)); }
+      groups.get(it.group).append(ui.toggle({ title: it.label, help: it.help, checked: !!S.hide[it.key], onChange: v => M.setHide(it.key, v) }).el);
     }
   }
 
   ts6mod.register({
     id: 'layout',
     title: 'Layout',
+    group: 'Interface', order: 1,
+    icon: 'M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M3 9h18 M9 9v11',
+    summary: 'Chat and server tabs in the title bar, channel tree row height, and hiding parts of the window you never use.',
+    keywords: ['Chat tabs in the title bar', 'Servers as tabs too', 'Channel tree row height', 'Density', 'Hide', 'Announcement bar', 'Server banner', 'File transfer info', 'Create Channel button', 'AFK button', 'Bookmarks section', 'Popular Servers'],
+    status: api => { const s = api.storage, hid = Object.values(s.get('hide', {})).filter(Boolean).length, d = +s.get('density', 100) || 100;
+      return [s.get('chatTabs') ? 'Chat tabs' : '', s.get('serverTabs') ? 'Server tabs' : '', d !== 100 ? 'Rows ' + d + '%' : '', hid ? hid + ' hidden' : ''].filter(Boolean).join(' · '); },
     description: 'Chat tabs (and server tabs) in the title bar, a row-height slider for the channel tree, and switches to hide parts of the interface. Everything starts off.',
     enable,
     disable() { M = null; },

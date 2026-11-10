@@ -2,7 +2,12 @@
  * in the page with the browser's own codecs before TeamSpeak sees them. Docs: superdoc/features/mod-files.md. */
 ts6mod.register({
   id: 'files',
-  title: 'Compress large images',
+  title: 'Compress images',
+  group: 'Chat & files', order: 2,
+  icon: 'M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M21 17l-6-6-8 8',
+  summary: 'Shrinks large images below the upload limit before they are sent. Other files are untouched.',
+  keywords: ['Chat attachments', 'Files tab', 'Compress images larger than', 'Maximum resolution', 'Target size margin', 'Output format', 'JPEG', 'WebP', 'PNG', 'Transparent images'],
+  status: api => { const g = (k, d) => { const v = api.storage.get(k, undefined); return v === undefined ? d : v; }; return 'over ' + g('limitMB', 5) + ' MB, ' + g('maxRes', 2560) + ' px'; },
   description: 'Images over the upload limit are scaled down and re-encoded to fit automatically (chat drop/paste/attach, Files tab). Off = vanilla.',
   enable(api) {
     const DEF = { maxRes: 2560, format: 'jpeg', alpha: 'webp', margin: 5, limitMB: 5, chat: true, filesTab: true };
@@ -114,13 +119,16 @@ ts6mod.register({
     const upd = () => { const r = api.files.routes(); status.textContent = 'Reachable now: ' + [r.chat ? 'chat attachments' : 'no chat with attachments open (TS3 server chats have none)', r.filesTab ? 'Files tab' : 'no Files tab open', r.reader ? 'path reader ok' : 'path reader missing (start with launcher/ts6-mod)'].join(', ') + '.'; };
     upd(); api.interval(upd, 1500);
     box.append(
-      tg('chat', 'Chat attachments', 'Drag and drop, paste and the attach button of chats that allow attachments.'),
-      tg('filesTab', 'Files tab', 'Channel and client Files tab: drag and drop, and the upload button.'),
-      sl('limitMB', 'Compress images larger than', 1, 50, 1, ' MB', 'Chat drop and paste are capped by the client at 5 MB whatever this says.'),
-      sl('maxRes', 'Maximum resolution (long edge)', 640, 8192, 64, ' px', 'Larger images are scaled down first.'),
-      sl('margin', 'Target size margin', 0, 20, 1, ' %', 'The result is aimed this far below the limit.'),
-      group('Output format', [['jpeg', 'JPEG'], ['webp', 'WebP']], 'format'),
-      group('Transparent images', [['webp', 'WebP (keeps transparency)'], ['png', 'PNG (lossless, shrinks pixels)'], ['flatten', 'White background']], 'alpha'),
+      ui.section('Where',
+        tg('chat', 'Chat attachments', 'Drag and drop, paste and the attach button of chats that allow attachments.'),
+        tg('filesTab', 'Files tab', 'Channel and client Files tab: drag and drop, and the upload button.')),
+      ui.section('Size',
+        sl('limitMB', 'Compress images larger than', 1, 50, 1, ' MB', 'Chat drop and paste are capped by the client at 5 MB whatever this says.'),
+        sl('maxRes', 'Maximum resolution (long edge)', 640, 8192, 64, ' px', 'Larger images are scaled down first.'),
+        sl('margin', 'Target size margin', 0, 20, 1, ' %', 'The result is aimed this far below the limit.')),
+      ui.section('Format',
+        group('Output format', [['jpeg', 'JPEG'], ['webp', 'WebP']], 'format'),
+        group('Transparent images', [['webp', 'WebP (keeps transparency)'], ['png', 'PNG (lossless, shrinks pixels)'], ['flatten', 'White background']], 'alpha')),
       ui.note('Re-encoding always drops metadata (EXIF, GPS, color profile); the rotation is applied to the pixels first. Animated GIF/PNG/WebP, other formats and files under the limit are not touched.'),
       status);
   },
