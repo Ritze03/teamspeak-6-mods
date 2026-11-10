@@ -1,5 +1,5 @@
 /* wavproc in.wav out.wav [key=value ...]  -- 16-bit PCM WAV through the ts6dsp chain.
- * Keys: enabled target max_gain gate threshold ratio knee attack release makeup lookahead ceiling
+ * Keys: enabled comp target max_gain gate threshold ratio knee attack release makeup lookahead ceiling
  * Output is latency-compensated (same length as input). */
 #include "ts6dsp.h"
 #include <math.h>
@@ -27,6 +27,7 @@ int main(int argc, char **argv) {
         if (!eq) return die("arguments after the file names must be key=value");
         *eq = 0; float v = strtof(eq + 1, NULL); int ok = 0;
         if (!strcmp(argv[i], "enabled")) { p.enabled = (int)v; ok = 1; }
+        if (!strcmp(argv[i], "comp")) { p.comp_enabled = (int)v; ok = 1; }
         for (size_t k = 0; k < sizeof keys / sizeof *keys; k++) if (!strcmp(argv[i], keys[k].k)) { *keys[k].f = v; ok = 1; }
         if (!ok) { fprintf(stderr, "wavproc: unknown key '%s'\n", argv[i]); return 1; }
     }

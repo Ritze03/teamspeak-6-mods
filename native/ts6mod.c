@@ -367,6 +367,7 @@ static void cfg_apply_json(cfg_t *c, const char *b) {
     if (jnum(b, "target_db", &f)) c->p.target_db = f;
     if (jnum(b, "max_gain_db", &f)) c->p.max_gain_db = f;
     if (jnum(b, "gate_db", &f)) c->p.gate_db = f;
+    if (jbool(b, "comp_enabled", &i)) c->p.comp_enabled = i;
     if (jnum(b, "threshold_db", &f)) c->p.threshold_db = f;
     if (jnum(b, "ratio", &f)) c->p.ratio = f;
     if (jnum(b, "knee_db", &f)) c->p.knee_db = f;
@@ -383,9 +384,9 @@ static int cfg_json(const cfg_t *c, char *o, size_t cap) {
     const ts6dsp_params *p = &c->p;
     return snprintf(o, cap,
         "{\"enabled\":%s,\"mode\":\"%s\",\"preset\":\"%s\",\"strength\":%.1f,\"target_db\":%.2f,\"max_gain_db\":%.2f,\"gate_db\":%.2f,"
-        "\"threshold_db\":%.2f,\"ratio\":%.2f,\"knee_db\":%.2f,\"attack_ms\":%.2f,\"release_ms\":%.2f,"
+        "\"comp_enabled\":%s,\"threshold_db\":%.2f,\"ratio\":%.2f,\"knee_db\":%.2f,\"attack_ms\":%.2f,\"release_ms\":%.2f,"
         "\"makeup_db\":%.2f,\"lookahead_ms\":%.2f,\"ceiling_db\":%.2f}",
-        c->enabled ? "true" : "false", c->mode, c->preset, c->strength, p->target_db, p->max_gain_db, p->gate_db, p->threshold_db,
+        c->enabled ? "true" : "false", c->mode, c->preset, c->strength, p->target_db, p->max_gain_db, p->gate_db, p->comp_enabled ? "true" : "false", p->threshold_db,
         p->ratio, p->knee_db, p->attack_ms, p->release_ms, p->makeup_db, p->lookahead_ms, p->ceiling_db);
 }
 

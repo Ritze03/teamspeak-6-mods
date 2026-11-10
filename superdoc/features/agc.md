@@ -1,6 +1,6 @@
 # Audio mod: AGC (whole stream / per speaker) and per-user audio
 
-Dynamics processing (leveler -> compressor -> lookahead limiter) on the voices the client plays, plus per-user volume,
+Dynamics processing (leveler -> optional compressor, off by default -> lookahead limiter) on the voices the client plays, plus per-user volume,
 mute, boost and AGC overrides. Built from four parts: a native preload module (`native/`), the DSP core
 (`native/dsp`), an inline hook for per-speaker mode ([per-speaker-hook.md](per-speaker-hook.md)) and the injected `audio`
 mod (`panel/mods/audio/`, TeamSpeak names in `panel/core/x-audio.js`; framework: [ts6-mod-api.md](ts6-mod-api.md)).
@@ -61,7 +61,7 @@ reload with mod off and native on -> native turned off; on -> master restored.
 TeamSpeak main process
   libts6mod.so (LD_PRELOAD)           native/ts6mod.c
     dlsym() interposition  ->  wrappers for pa_stream_{connect_playback,write,write_ext_free,begin_write,cancel_write,disconnect}
-    write wrapper (mode whole)        ->  ts6dsp (native/dsp): leveler -> compressor -> lookahead limiter, one state per playback stream
+    write wrapper (mode whole)        ->  ts6dsp (native/dsp): leveler -> compressor (only if `comp_enabled`) -> lookahead limiter, one state per playback stream
     inline hook (mode per_speaker)    ->  native/ts6hook.c: one ts6dsp per sender (pool of 32), overrides per clientId
     control thread         ->  HTTP on 127.0.0.1:<port>: /config /status /meters /speakers /speaker   (+ agc.json)
 launcher/ts6-mod -> tools/cdp/mods-inject.mjs  --CDP-->  UI page: panel/core + panel/mods/audio
@@ -95,7 +95,7 @@ of delay to **all** playback (default 5 ms; 0 = hard limiter, no delay).
 
 Config keys: `enabled` (bool, default false; the mod drives it, see the vanilla rule), `mode` (`whole`\|`per_speaker`), `preset` (name; the
 mod writes `voice`, `music`, `quiet`, `user_<id>` or `custom`; legacy values such as `balanced` are shown as "custom"), `strength`
-(0-100, legacy, ignored by the mod), plus the `ts6dsp` parameters `target_db`, `max_gain_db`, `gate_db`, `threshold_db`, `ratio`,
+(0-100, legacy, ignored by the mod), plus the `ts6dsp` parameters `target_db`, `max_gain_db`, `gate_db`, `comp_enabled` (bool, default false: compressor stage bypassed, see "Compressor switch"), `threshold_db`, `ratio`,
 `knee_db`, `attack_ms`, `release_ms`, `makeup_db`, `lookahead_ms`, `ceiling_db` (ranges/defaults: [native/dsp/README.md](../../native/dsp/README.md)).
 (`dashboard_button` is gone from the native config; the Dashboard button is its own mod, see [mods-panel.md](mods-panel.md).)
 Persisted to `$XDG_CONFIG_HOME/ts6-mods/agc.json` (fallback `$HOME/.config/...`); log `$XDG_STATE_HOME/ts6-mods/ts6mod.log`.
@@ -122,7 +122,7 @@ mode/preset/parameter/meter boxes are dimmed (still editable).
   mod's storage as `{id: {name, values}}`; the native `preset` key is `user_<id>` (the native parser only takes `[A-Za-z0-9_-]`, free-text
   names cannot go there). Deleting the selected preset sets `preset:"custom"`.
 - **Parameters** (each: slider + number field + unit, help as hover tooltip; ranges = the DSP's): Leveler (target, max boost, noise gate),
-  Compressor (threshold, ratio, knee, attack, release, make-up), Limiter (lookahead, ceiling). `PARAMS` in `index.js`.
+  Compressor (on/off switch at the top of its box, off by default; while off its sliders stay visible but dimmed and locked; then threshold, ratio, knee, attack, release, make-up), Limiter (lookahead, ceiling). `PARAMS` in `index.js`.
 - **Live meters**: whole mode: input level, gain reduction, leveler gain, input/output peak (`/meters`, 120 ms). Per-speaker mode: a list
   of known speakers with nickname (client id -> nickname through `api.peers.list`), level, gain reduction, leveler gain, an "override"
   badge, idle ones dimmed, and an "Audio..." button (`/speakers`, 120 ms). Polling runs in the settings scope only: it stops when the
@@ -133,16 +133,41 @@ mode/preset/parameter/meter boxes are dimmed (still editable).
 
 ### Preset values
 
-| | target | max boost | gate | threshold | ratio | knee | attack | release | make-up | lookahead | ceiling |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Voice** (= DSP defaults) | -20 dB | 12 dB | -50 dB | -24 dB | 3:1 | 6 dB | 5 ms | 150 ms | 4 dB | 5 ms | -1 dB |
-| **Music** | -18 dB | 6 dB | -60 dB | -18 dB | 2:1 | 12 dB | 20 ms | 400 ms | 2 dB | 5 ms | -1 dB |
-| **Quiet night** | -26 dB | 18 dB | -55 dB | -30 dB | 6:1 | 6 dB | 2 ms | 120 ms | 0 dB | 8 ms | -6 dB |
+| | target | max boost | gate | compressor | threshold | ratio | knee | attack | release | make-up | lookahead | ceiling |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Voice** (= DSP defaults) | -20 dB | 12 dB | -50 dB | off | -24 dB | 3:1 | 6 dB | 5 ms | 150 ms | 4 dB | 5 ms | -1 dB |
+| **Music** | -18 dB | 6 dB | -60 dB | off | -18 dB | 2:1 | 12 dB | 20 ms | 400 ms | 2 dB | 5 ms | -1 dB |
+| **Quiet night** | -26 dB | 18 dB | -55 dB | off | -30 dB | 6:1 | 6 dB | 2 ms | 120 ms | 0 dB | 8 ms | -6 dB |
+
+The compressor columns are the values it takes when switched on; with it off they have no effect (make-up included).
+Leveler targets/boosts are unchanged: speech at RMS -20 dBFS with the limiter at -1 dB is already loud, and the peaks the leveler
+leaves are caught by the limiter alone (the gain reduction meter then shows the limiter only). Loudness drops by the old make-up
+(about 4 dB on Voice, 2 dB on Music) minus what the compressor used to take off the peaks; raise "Target level" if you want it louder.
 
 Voice: everyday speech. Music: music bots; a gentle leveler (small boost), low ratio, wide knee, slow attack/release so dynamics survive and
 only peaks are stopped. Quiet night: low overall volume (target -26, ceiling -6 dB), strong peak control (ratio 6, fast attack, more boost so
 whispers stay audible, a little more lookahead). `PRESETS` in `index.js`. The old Gentle/Balanced/Strong + strength slider were dropped
 (three anchors blended by one slider were less transparent than named presets plus the real parameters).
+
+## Compressor switch
+
+`comp_enabled` (`ts6dsp_params`, `native/dsp/ts6dsp.c:ts6dsp_process_f32`): off = the compressor adds no gain reduction **and no make-up**
+(make-up is part of the compressor stage and ramps to 0 in 10 ms; leftover reduction decays with the release time), so leveler and
+limiter are the only active stages. Exposed as `comp_enabled` in `/config` and persisted in `agc.json`. Per-user custom parameters do not
+include it: the switch follows the global setting.
+
+- **Default off**, including the native default (so the native default values still equal Voice and the value-match fallback
+  highlights Voice on a fresh install). Built-in presets all carry `comp_enabled:false`.
+- **Migration:** an `agc.json` without the field loads as off, so existing installs lose the compressor on the next client start
+  (native change: restart needed). Their other values are kept. Why: the user wants leveler + limiter only; keeping old configs
+  "on" would leave the problem in place for exactly the people who have it.
+- **User presets** saved before the switch have no field: they are treated as compressor **on** (they keep what they were made with);
+  handled in `presetValues`/`same` of `panel/mods/audio/index.js`, no storage rewrite.
+- Ratio 1 is **not** used as a bypass: make-up would still raise the level, hence a real switch.
+
+Why (off by default): the compressor with make-up gain and a fast release lifts room-reverb tails between syllables, which some
+microphones turn into an audible slight echo. The user's decision: leveler and limiter are the only things really active; the
+compressor stays available as an opt-in.
 
 ## Per-user audio ("Audio..." popover)
 
@@ -191,7 +216,7 @@ equal the current ones (`selected()`), so a fresh install shows Voice instead of
 ## Test procedure
 
 - Automated: `node tools/test/run-all.mjs --cdp-port <cdp> --control-port <ctl> --only audio` (`panel/mods/audio/test.mjs`; it opens the Audio page and picks the tab each part needs via `ctx.openModsPage('audio', <tab>)`): vanilla rule,
-  master and mode switches through the real controls, all 11 parameter fields, the three built-in presets (values, "modified"), custom
+  master and mode switches through the real controls, compressor switch (locks/unlocks the sliders, native `comp_enabled`), all 11 parameter fields, the three built-in presets (values, "modified"), custom
   preset save/update/rename/delete, value-matched selection for an unknown native preset name, back-to-back off/on (native master equals the stored one), per-user popover (volume, mute, boost, bypass, custom param, no lookahead field, re-push after mod
   off/on, reset), cleanup. Safe on a real client: the master stays off while editing (the per-speaker hook is never installed by it),
   nothing touches a server, and every value, record and local mute is restored. The per-user part needs another connected user
@@ -202,7 +227,7 @@ equal the current ones (`selected()`), so a fresh install shows Voice instead of
   `GET /config` and `GET /speakers` (`override:true` on the user's **new** client id while they talk).
 - Per-speaker meters need a talker: a second client whose microphone is a PipeWire null-sink monitor, VAD off
   (`setPreProcessorConfigValue(schid,'vad','false')`), playing `bursty.wav` with `pw-play --target <sink>` (see [test-rig.md](test-rig.md)).
-- `make -C native/dsp test`, `native/test/run_hook_test.sh`, `native/test/sigscan.sh`.
+- `make -C native/dsp test` (includes `test_comp_bypass`: compressor off leaves the signal untouched, no reduction, no make-up), `native/test/run_hook_test.sh`, `native/test/sigscan.sh`.
 
 ## Why
 

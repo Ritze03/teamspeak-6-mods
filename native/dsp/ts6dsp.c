@@ -34,12 +34,13 @@ struct ts6dsp {
 static float clampf(float v, float lo, float hi) { return !(v >= lo) ? lo : v > hi ? hi : v; }
 
 void ts6dsp_default_params(ts6dsp_params *p) {
-    ts6dsp_params d = { 1, -20.f, 12.f, -50.f, -24.f, 3.f, 6.f, 5.f, 150.f, 4.f, 5.f, -1.f };
+    ts6dsp_params d = { 1, -20.f, 12.f, -50.f, 0, -24.f, 3.f, 6.f, 5.f, 150.f, 4.f, 5.f, -1.f };
     *p = d;
 }
 
 static void sanitize(ts6dsp_params *p) {
     p->enabled = p->enabled != 0;
+    p->comp_enabled = p->comp_enabled != 0;
     p->target_db = clampf(p->target_db, -40, 0);
     p->max_gain_db = clampf(p->max_gain_db, 0, 24);
     p->gate_db = clampf(p->gate_db, -90, -20);
@@ -93,7 +94,7 @@ ts6dsp *ts6dsp_create(int sr, int ch, const ts6dsp_params *pp) {
     for (int i = 0; i < s->L; i++) s->mnr[i] = 1.0f;
     s->msum = s->L;
     s->ms = 1e-20f; s->lr = 1.0f;
-    s->mk = p.makeup_db; s->mix = s->mix_t = p.enabled ? 1.0f : 0.0f;
+    s->mk = p.comp_enabled ? p.makeup_db : 0.f; s->mix = s->mix_t = p.enabled ? 1.0f : 0.0f;
     derive(s);
     s->mix = s->mix_t;
     atomic_init(&s->seq, 0);
@@ -110,7 +111,7 @@ void ts6dsp_reset(ts6dsp *s) {
     s->msum = L; s->mpos = 0; s->dpos = 0;
     s->dq_head = 0; s->dq_cnt = 0;
     s->ms = 1e-20f; s->lg = 0.f; s->env = 0.f; s->gr = 0.f;
-    s->mk = s->p.makeup_db; s->lr = 1.0f;
+    s->mk = s->p.comp_enabled ? s->p.makeup_db : 0.f; s->lr = 1.0f;
     s->mix = s->mix_t = s->p.enabled ? 1.0f : 0.0f;
     s->n = 0;
     atomic_store_explicit(&s->m_in, -120.f, memory_order_relaxed);
@@ -161,6 +162,7 @@ void ts6dsp_process_f32(ts6dsp *s, float *buf, int frames) {
     poll_params(s);
     const int ch = s->ch, L = s->L;
     const ts6dsp_params *p = &s->p;
+    const float mk_t = p->comp_enabled ? p->makeup_db : 0.f; /* make-up belongs to the compressor stage */
     const float T = p->threshold_db, W = p->knee_db, invR = 1.0f / p->ratio;
     float ms = s->ms, lg = s->lg, env = s->env, gr = s->gr, mk = s->mk, lr = s->lr, mix = s->mix;
     float in_db = -120.f, gr_max = 0.f;
@@ -193,10 +195,11 @@ void ts6dsp_process_f32(ts6dsp *s, float *buf, int frames) {
         if (2.0f * d < -W) grt = 0.f;
         else if (2.0f * fabsf(d) <= W) { float k = d + W * 0.5f; grt = (1.0f - invR) * k * k / (2.0f * W); }
         else grt = d * (1.0f - invR);
+        if (!p->comp_enabled) grt = 0.f; /* bypass: gr decays to 0 with the release time, make-up ramps to 0 */
         gr += (grt - gr) * (grt > gr ? s->a_att : s->a_rel);
         if (grt <= 0.f && gr < 1e-4f) gr = 0.f;
-        mk += (p->makeup_db - mk) * s->a_mk;
-        if (fabsf(p->makeup_db - mk) < 1e-4f) mk = p->makeup_db;
+        mk += (mk_t - mk) * s->a_mk;
+        if (fabsf(mk_t - mk) < 1e-4f) mk = mk_t;
         float g1 = exp2f((lg - gr + mk) * DB2LOG2);
 
         /* --- limiter: required gain, release envelope, window min, box average --- */
