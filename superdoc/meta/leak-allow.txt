@@ -1,2 +1,1 @@
 /opt/teamspeak/TeamSpeak  # standard install path of the TS6 Linux package, not machine-specific
-/opt/teamspeak/TeamSpeak  # stock TeamSpeak 6 install path (the launcher's default), not a host-specific path
