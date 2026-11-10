@@ -3,13 +3,13 @@
 // Channels "aware-a"/"aware-b" are created through serverquery (creds file $AWARE_QUERY_CREDS, default $HOME/tmp/ts6-modsrv/creds.env)
 // when missing. The feed part (second client, serverquery) runs ONLY on the local test server (ctx.onTestServer()); a second client that
 // was connected before is connected again afterwards (same nickname), so later tests still find it. Elsewhere the test is read-only:
-// talk events are simulated locally; the idle probe sends requestConnectionInfo (a read-only query the client also sends for its own
-// client-info view). Test procedure: superdoc/features/mod-aware.md.
+// the talk circles and the idle probe send requestConnectionInfo (a read-only query the client also sends for its own client-info view).
+// The talk-circle check with a real other-channel talker (the second client sends a few channel messages in aware-b, which resets its
+// idle time) also runs only there; elsewhere marks are only checked passively. Test procedure: superdoc/features/mod-aware.md.
 import { connect } from '../../../tools/cdp/cdp.mjs';
 import { createConnection } from 'node:net';
 import { readFileSync } from 'node:fs';
 
-const BADGE = '[data-ts6mod="aware"].aware-badge';
 const requests = ctx => ctx.eval('__ts6modBoot.aware.stats.requests');
 const entries = ctx => ctx.eval('window.__awProbe.entries()');
 
@@ -35,42 +35,35 @@ export default async function (ctx) {
     ctx.equal(await ctx.eval(`document.querySelectorAll('[data-ts6mod="aware"]').length`), 0, 'no mod DOM while the mod is off');
     const R0 = await requests(ctx);
 
-    /* ---- mod on, idle probe OFF (default): zero bridge requests however long we wait ---- */
-    await set({ idleInterval: 1, fade: 2 });
+    /* ---- mod on, talk circles and idle probe OFF: zero bridge requests however long we wait ---- */
+    await set({ talk: false, idleInterval: 1 });
     await ctx.enable('aware');
     await ctx.eval(`ts6mod.register({id: 't-aware-probe', title: 'probe', enable(api) { window.__awProbe = api.ext.aware; window.__awApi = api; }})`);
     await ctx.enable('t-aware-probe');
     ctx.assert(await ctx.eval('!!window.__awProbe'), 'extension "aware" is available');
     await ctx.sleep(3500);
-    ctx.equal(await requests(ctx), R0, 'idle probe off: no requestConnectionInfo calls with the mod on');
+    ctx.equal(await requests(ctx), R0, 'talk circles and idle probe off: no requestConnectionInfo calls with the mod on');
 
-    /* ---- activity badges: talking count, then a fading "recent" dot ---- */
-    // another client whose channel row is rendered right now (the tree is a virtual list: off-screen rows carry no badge)
-    const shown = await ctx.eval(`__ts6mod.anchors.tree.rows('channel').map(r => String(r.model.id))`);
-    const info = (await ctx.eval(`__awApi.state.clients({all: true}).filter(c => !c.self).map(c => ({id: c.id, ch: c.channelId}))`)).filter(c => shown.includes(String(c.ch)));
-    if (!info.length) ctx.skip('activity badges', 'no other client in a channel whose row is on screen');
-    else {
-    const c1 = info[0].id;
-    const rowsOf = () => ctx.eval(`[...document.querySelectorAll('${BADGE}')].map(b => b.className + '|' + b.textContent)`);
-    const before = (await rowsOf()).filter(x => x.includes('talking')).length;   // real talkers may exist on the shared server
-    await ctx.eval(`__ts6modBoot.aware.talk(${c1}, 1)`);
-    await ctx.waitFor(`document.querySelector('${BADGE}.talking')`, 'a talking badge appears on a channel row after a talk-start');
-    ctx.assert((await rowsOf()).filter(x => x.includes('talking')).length >= Math.max(1, before), 'talking badge present');
-    // survives re-rendering of the rows (collapse / expand recycles them)
-    await ctx.eval('__ts6modBoot.aware.setCollapsed(true)'); await ctx.sleep(400);
-    await ctx.eval('__ts6modBoot.aware.setCollapsed(false)');
-    await ctx.waitFor(`document.querySelector('${BADGE}.talking')`, 'badge comes back after the rows were re-rendered');
-    await ctx.eval(`__ts6modBoot.aware.talk(${c1}, 0)`);
-    // other workers' real talkers share the server, so judge only this channel's row: after the stop it shows a recent dot (or still
-    // a talking badge when a real talker is there too) and the dot's opacity falls below 1 within the fade time
-    const ROW = `.mods-deco[data-mid="channel:${info[0].ch}"] .aware-badge`;
-    await ctx.waitFor(`document.querySelector('${ROW}')`, 'this channel keeps a badge after the talk stopped');
-    await ctx.sleep(1300);
-    ctx.assert(await ctx.eval(`(() => { const b = document.querySelector('${ROW}'); return !b || b.classList.contains('talking') || +b.style.opacity < 0.95; })()`), 'recent dot fades (opacity falls) or is gone');
-    }
+    /* ---- talk circles on (passive part, any server): one request per tick, marks only on other channels' rows the client has no
+     * talk status for, and no channel badges any more ---- */
+    await set({ talk: true, idleInterval: 1 });
+    await ctx.eval('window.__awProbe.apply()');
+    const T1 = await requests(ctx); await ctx.sleep(3600);
+    const T2 = await requests(ctx);
+    const others = await ctx.eval(`__ts6modBoot.aware.marks().length + 0`);
+    ctx.assert(T2 - T1 <= 5, `talk circles: throttled to ${T2 - T1} requests in 3.6 s with a 1 s interval`);
+    const bad = (await ctx.eval('__ts6modBoot.aware.marks()')).filter(m => m.stock || m.mine || m.id == null);
+    ctx.equal(bad.length, 0, `marks only on other channels' rows the client has no talk status for (${others} marked now)`);
+    ctx.equal(await ctx.eval(`document.querySelectorAll('.aware-badge, [data-ts6mod="aware"].mods-deco[data-mid^="channel:"]').length`), 0, 'no badge on channel rows');
+    await set({ talk: false, idleInterval: 1 });
+    await ctx.eval('window.__awProbe.apply()');
+    await ctx.sleep(300);
+    ctx.equal(await ctx.eval('__ts6modBoot.aware.marks().length'), 0, 'talk circles off: no marks left');
+    const T3 = await requests(ctx); await ctx.sleep(2500);
+    ctx.equal(await requests(ctx), T3, 'talk circles off: requests stop');
 
     /* ---- idle probe ON: one request per tick, only for clients in expanded channels ---- */
-    await set({ idle: true, idleInterval: 1, idleMin: 0, fade: 2 });
+    await set({ talk: false, idle: true, idleInterval: 1, idleMin: 0 });
     await ctx.eval('window.__awProbe.apply()');
     const R1 = await requests(ctx);
     await ctx.sleep(3600);
@@ -81,7 +74,7 @@ export default async function (ctx) {
     const R3 = await requests(ctx); await ctx.sleep(2500);
     ctx.equal(await requests(ctx), R3, 'all channels collapsed: no requests (expanded channels only)');
     await ctx.eval('__ts6modBoot.aware.setCollapsed(false)');
-    await set({ idle: false, idleInterval: 1, fade: 2 });
+    await set({ talk: false, idle: false, idleInterval: 1 });
     await ctx.eval('window.__awProbe.apply()');
     await ctx.sleep(300);
     const R4 = await requests(ctx); await ctx.sleep(2500);
@@ -104,6 +97,7 @@ export default async function (ctx) {
       const t0 = Date.now(); let st = null;
       while (Date.now() - t0 < 20000 && !(st = await p2e('window.__awareP2.status()'))) await ctx.sleep(500);
       ctx.assert(st, 'second client connected');
+      await p2e('window.__awareP2.quiet()');   // never the real microphone / speakers on a test client
       let chans = await p2e('window.__awareP2.channels()');
       if (!chans.some(c => c.name === 'aware-a') || !chans.some(c => c.name === 'aware-b')) {
         await query(['channelcreate channel_name=aware-a channel_flag_permanent=1', 'channelcreate channel_name=aware-b channel_flag_permanent=1']); await ctx.sleep(1500);
@@ -116,6 +110,29 @@ export default async function (ctx) {
       await ctx.waitFor(`window.__awProbe.entries().some(e => e.nick === ${JSON.stringify(nick)} && e.kind === 'move' && e.to === 'aware-a')`, 'feed shows the move into aware-a', 6000);
       await p2e(`window.__awareP2.move('${B.id}')`);
       await ctx.waitFor(`window.__awProbe.entries().some(e => e.nick === ${JSON.stringify(nick)} && e.kind === 'move' && e.from === 'aware-a' && e.to === 'aware-b')`, 'feed shows the move aware-a -> aware-b', 6000);
+
+      /* talk circle of a real other-channel client: second client in aware-b (mic and speakers off); its channel messages reset its idle time */
+      const myCh = String(await ctx.eval('__awApi.state.clients({all: true}).find(c => c.self).channelId'));
+      if (myCh === String(B.id)) ctx.skip('talk circle', 'this client sits in aware-b itself');
+      else {
+        await set({ talk: true, idle: false, idleInterval: 1 });
+        await ctx.eval('window.__awProbe.apply()');
+        await ctx.waitFor(`__ts6modBoot.aware.circle(${st.id}) !== null`, "second client's row is on screen", 6000);
+        await ctx.waitFor(`(c => c && !c.talking)(__ts6modBoot.aware.circle(${st.id}))`, 'idle second client: talk circle normal', 10000);
+        let lit = null;
+        for (let i = 0; i < 12 && !lit; i++) {   // stay active (one message per second, at most 12: below the server's flood limit) until a poll catches it at idle 0 s
+          await p2e(`window.__awareP2.say('aware test ${i}')`); await ctx.sleep(1000);
+          lit = await ctx.eval(`(c => c && c.talking && c.marked && !c.stock ? c : null)(__ts6modBoot.aware.circle(${st.id}))`);
+        }
+        ctx.assert(lit, "active second client in another channel: its talk circle shows talking (stock class + our mark)");
+        ctx.equal((await ctx.eval('__ts6modBoot.aware.marks()')).filter(m => m.stock || m.mine).length, 0, 'own channel / stock-talking rows never marked');
+        await ctx.waitFor(`(c => c && !c.talking && !c.marked)(__ts6modBoot.aware.circle(${st.id}))`, 'quiet again (idle > 0 s): talk circle back to normal', 10000);
+        await set({ talk: false, idle: false, idleInterval: 1 });
+        await ctx.eval('window.__awProbe.apply()');
+        await ctx.sleep(300);
+        ctx.equal(await ctx.eval('__ts6modBoot.aware.marks().length'), 0, 'talk circles off: no marks left');
+      }
+
       await p2e('window.__awareP2.disconnect()');
       await ctx.waitFor(`window.__awProbe.entries().some(e => e.nick === ${JSON.stringify(nick)} && e.kind === 'disconnect')`, 'feed shows the disconnect', 8000);
       const mine = (await entries(ctx)).filter(e => e.nick === nick).map(e => e.kind + ':' + (e.from || '') + '>' + (e.to || ''));
@@ -129,15 +146,16 @@ export default async function (ctx) {
     }
 
     /* ---- off: nothing left, no requests ---- */
-    await set({ idle: true, idleInterval: 1, idleMin: 0 });
+    await set({ talk: true, idle: true, idleInterval: 1, idleMin: 0 });
     await ctx.eval('window.__awProbe.apply()');
     await ctx.sleep(1500);
     await ctx.disable('t-aware-probe');
     await ctx.disable('aware');
     await ctx.assertClean('aware');
     const R5 = await requests(ctx); await ctx.sleep(2500);
-    ctx.equal(await requests(ctx), R5, 'mod off (even with the idle probe configured on): no requests');
-    ctx.equal(await ctx.eval(`document.querySelectorAll('.aware-pop, .aware-badge, .aware-idle').length`), 0, 'no badges / popup / idle labels left');
+    ctx.equal(await requests(ctx), R5, 'mod off (even with talk circles and idle probe configured on): no requests');
+    ctx.equal(await ctx.eval(`document.querySelectorAll('.aware-pop, .aware-badge, .aware-idle').length`), 0, 'no popup / idle labels left');
+    ctx.equal(await ctx.eval('__ts6modBoot.aware.marks().length'), 0, 'no talk circle marks left');
   } finally {
     if (p2) {
       try { await p2e('window.__awareP2 && window.__awareP2.disconnect()'); } catch (e) { /* gone */ }
@@ -145,6 +163,7 @@ export default async function (ctx) {
         try {
           await ctx.sleep(2500); await p2e(`window.__awareP2.connect(${JSON.stringify(p2Restore)}, 9990)`);
           for (let i = 0; i < 40 && !(await p2e('window.__awareP2.status()')); i++) await ctx.sleep(500);
+          await p2e('window.__awareP2.quiet()');
         } catch (e) { ctx.log('could not reconnect the second client: ' + e.message); }
       }
       p2.close();

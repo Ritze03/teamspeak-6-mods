@@ -1,4 +1,5 @@
-/* Server awareness mod: channel activity badges, idle probe (expanded channels only, throttled), join/leave feed.
+/* Server awareness mod: talk circles of other channels' users (from polled idle time), idle labels, join/leave feed. All polling goes
+ * through one throttled timer (one request per tick).
  * Docs: superdoc/features/mod-aware.md. TS specifics live in panel/core/x-aware.js (api.aware). Every sub-feature has its own
  * switch and lives in its own api.scope(), so switching it off disposes exactly its DOM, listeners, timers and requests. */
 ts6mod.register({
@@ -6,12 +7,12 @@ ts6mod.register({
   title: 'Server awareness',
   group: 'Server & network', order: 2,
   icon: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z',
-  summary: 'Talking badges on channels, idle times next to users, and a join / leave feed in the title bar.',
-  keywords: ['Channel activity badges', 'Activity fade time', 'Idle probe', 'Seconds between requests', 'Show idle from', 'Join / leave feed', 'Feed notifications', 'Entries kept'],
-  status: api => { const A = api.ext.aware; if (!A) return ''; const c = A.cfg(); return [c.badges ? 'Badges' : '', c.idle ? 'Idle' : '', c.feed ? 'Feed' : ''].filter(Boolean).join(', '); },
-  description: 'Activity badges on channels (who is talking, recent activity), idle time of users in expanded channels (opt-in: polls the server), and a join / leave / move feed.',
+  summary: 'Shows who talks in other channels on their talk circle, idle times next to users, and a join / leave feed in the title bar.',
+  keywords: ['Show talking in other channels', 'Talk circle', 'Idle probe', 'Seconds between requests', 'Show idle from', 'Join / leave feed', 'Feed notifications', 'Entries kept'],
+  status: api => { const A = api.ext.aware; if (!A) return ''; const c = A.cfg(); return [c.talk ? 'Talking' : '', c.idle ? 'Idle' : '', c.feed ? 'Feed' : ''].filter(Boolean).join(', '); },
+  description: 'Talking shown on the talk circle of users in other channels (from their polled idle time), idle time of users in expanded channels (opt-in), and a join / leave / move feed. Polling sends at most one request per interval.',
   enable(api) {
-    const DEF = { badges: true, idle: false, feed: true, toasts: false, idleInterval: 5, idleMin: 60, fade: 30, feedMax: 50 };
+    const DEF = { talk: true, idle: false, feed: true, toasts: false, idleInterval: 5, idleMin: 60, feedMax: 50 };
     const cfg = () => Object.assign({}, DEF, api.storage.all());
     const scopes = {};   // sub-feature name -> its scope, present while that feature is on
     let panel = null;    // {toggle} of the running feed, for tests
@@ -23,40 +24,44 @@ ts6mod.register({
     const hhmm = t => { const d = new Date(t); return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); };
     const dur = s => (s >= 3600 ? Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm' : s >= 60 ? Math.floor(s / 60) + 'm' : Math.floor(s) + 's');
 
-    /* ---------- 1. channel activity badges ---------- */
-    function badges(s, c) {
-      const talking = new Set(s.aware.talkers());     // client ids currently talking
-      const last = new Map();                         // channel id -> time someone last talked there
-      const now0 = Date.now();
-      for (const id of talking) { const ch = s.aware.channelOfClient(id); if (ch != null) last.set(ch, now0); }
-      s.aware.onTalk((id, on) => {
-        if (on) talking.add(id); else talking.delete(id);
-        const ch = s.aware.channelOfClient(id); if (ch != null) last.set(ch, Date.now());
-      });   // the tree re-renders its decorations on talk events by itself
-      const talkingIn = ch => { let n = 0; for (const id of talking) if (s.aware.channelOfClient(id) === String(ch)) n++; return n; };
-      s.treeRow.decorate({ for: 'channel', render(m) {
-        const n = talkingIn(m.id), age = (Date.now() - (last.get(String(m.id)) || 0)) / 1000;
-        if (!n && !(age < c.fade)) return null;
-        const b = s.el('span', { class: 'aware-badge ' + (n ? 'talking' : 'recent'), title: n ? n + ' talking here' : 'Someone talked here ' + dur(age) + ' ago' });
-        if (n) b.textContent = '♪ ' + n; else { b.textContent = '●'; b.style.opacity = String(Math.max(0.15, 1 - age / c.fade)); }
-        return b;
-      } });
-      // fade: re-render once a second, and only while some channel is still inside its fade time
-      s.interval(() => { const now = Date.now(); let any = talking.size > 0; for (const [k, t] of last) { if ((now - t) / 1000 > c.fade) last.delete(k); else any = true; } if (any) s.treeRow.refresh(); }, 1000);
+    /* ---------- 1. talking in other channels (from idle time) ---------- */
+    // The client only learns the talk status of people in its own channel. For the others, an idle time below 1 s in the last answer
+    // means they just talked (or typed: any activity resets it); their stock talk circle is shown as talking until HOLD runs out or a
+    // newer answer says otherwise. HOLD covers two request intervals, the time until a "hot" client is asked again (see poll()).
+    const HOLD = c => 2 * tickMs(c) + 1000;
+    const tickMs = c => Math.max(1, c.idleInterval) * 1000;
+    const talkingNow = (s, schid, id) => { const a = s.aware.answer(schid, id); return !!a && a.ms < 1000 && Date.now() - a.at < HOLD(cfg()); };
+    let marks = null;   // {sync} of the running talk feature
+    function talk(s) {
+      marks = s.aware.markTalking((schid, id) => talkingNow(s, schid, id));
+      s.interval(() => marks && marks.sync(), 1000);   // a mark ends when HOLD runs out (local only, no requests)
+      s.aware.cleanup(() => { marks = null; });
     }
 
-    /* ---------- 2. idle probe ---------- */
+    /* ---------- 2. idle labels ---------- */
     function idle(s, c) {
-      let rr = 0;
       s.treeRow.decorate({ for: 'client', render(m) {
         const ms = s.aware.idleMs(m); if (ms == null || ms / 1000 < c.idleMin) return null;
         return s.el('span', { class: 'aware-idle', title: 'Idle for ' + dur(ms / 1000) + ' (polled from the server)' }, 'idle ' + dur(ms / 1000));
       } });
-      s.interval(() => {   // one request in total per tick, round-robin over the users of expanded channels
-        const list = s.aware.expandedClients(); if (!list.length) return;
-        const cl = list[rr++ % list.length];
-        s.aware.requestInfo(cl.schid, cl.id).then(() => s.treeRow.refresh(), () => {});
-      }, Math.max(1, c.idleInterval) * 1000);
+    }
+
+    /* ---------- the one request timer (runs while "talk" or "idle" is on) ---------- */
+    // One request in total per tick, never more, whatever is switched on. Candidates: on-screen rows of other channels (talk) and users of
+    // expanded channels (idle); the client asked longest ago goes first. Every other tick a client currently shown as talking that was
+    // asked at least one tick ago is preferred, so its mark is confirmed or cleared quickly.
+    function poll(s, c) {
+      let tick = 0;
+      s.interval(() => {
+        const cur = cfg(), pool = new Map(), now = Date.now(), ms = tickMs(c);
+        if (cur.talk) for (const x of s.aware.otherRows()) pool.set(x.schid + ':' + x.id, x);
+        if (cur.idle) for (const x of s.aware.expandedClients()) pool.set(x.schid + ':' + x.id, x);
+        if (!pool.size) return;
+        const list = [...pool.values()], at = x => s.aware.askedAt(x.schid, x.id);
+        const hot = cur.talk && tick++ % 2 === 0 ? list.filter(x => talkingNow(s, x.schid, x.id) && now - at(x) >= ms - 200) : [];
+        const cl = (hot.length ? hot : list).reduce((a, b) => (at(b) < at(a) ? b : a));
+        s.aware.requestInfo(cl.schid, cl.id).then(() => { s.treeRow.refresh(); if (marks) marks.sync(); }, () => {});
+      }, tickMs(c));
     }
 
     /* ---------- 3. join / leave feed ---------- */
@@ -97,11 +102,12 @@ ts6mod.register({
     }
 
     /* ---------- switching sub-features on and off ---------- */
-    const SUBS = { badges, idle, feed: feedSetup };
+    const SUBS = { talk, idle, poll, feed: feedSetup };
+    const wanted = (c, name) => (name === 'poll' ? !!(c.talk || c.idle) : !!c[name]);
     function apply() {
       const c = cfg();
       for (const name of Object.keys(SUBS)) {
-        const want = !!c[name];
+        const want = wanted(c, name);
         if (want && !scopes[name]) { scopes[name] = api.scope(); try { SUBS[name](scopes[name], c); } catch (e) { console.warn('[aware] ' + name, e); } }
         else if (!want && scopes[name]) { scopes[name].dispose(); delete scopes[name]; if (name === 'feed') { feed.entries.length = 0; feed.unseen = 0; } }
       }
@@ -111,7 +117,7 @@ ts6mod.register({
       apply,
       entries: () => feed.entries.map(e => ({ kind: e.kind, nick: e.nick, from: e.from, to: e.to, text: textOf(e) })),
       togglePanel: () => { if (panel) panel.toggle(); return !!panel; },
-      restart(name) { if (scopes[name]) { scopes[name].dispose(); delete scopes[name]; } apply(); },   // a feature that reads a value once (interval, fade, toasts) is rebuilt
+      restart(name) { if (scopes[name]) { scopes[name].dispose(); delete scopes[name]; } apply(); },   // a feature that reads a value once (interval, toasts) is rebuilt
     });
     apply();
   },
@@ -124,12 +130,11 @@ ts6mod.register({
     const tgl = (key, title, sub, restart) => { const t = ui.toggle({ title, sub, checked: !!c[key], onChange: v => set(key, v, restart) }); return t.el; };
     const sl = (key, label, min, max, step, unit, help, feature) => ui.slider({ label, min, max, step, unit, value: c[key], help, onCommit: v => set(key, v, feature), onInput: v => set(key, v, feature) }).el;
     box.append(
-      ui.section('Channel activity',
-        tgl('badges', 'Channel activity badges', 'A note with the number of people talking, or a fading dot after someone talked, on the channel row. Only channels you are subscribed to report activity.'),
-        sl('fade', 'Activity fade time', 5, 300, 5, 's', 'How long the dot stays after the last talk.', 'badges')),
+      ui.section('Talking in other channels',
+        tgl('talk', 'Show talking in other channels (from idle time)', 'The client only knows who talks in your own channel. For users in other channels whose row is on screen, an idle time of 0 s turns their talk circle on, as if you were in that channel. Shows up to two request intervals late, and also for typing or other activity.')),
       ui.section('Idle times',
-        tgl('idle', 'Idle probe (polls the server)', 'Shows "idle 12m" next to users of expanded channels. Idle time only exists as the answer to a per-user request, so this sends one request per interval. Off = no requests at all.'),
-        sl('idleInterval', 'Seconds between requests', 1, 60, 1, 's', 'One request in total per interval, round-robin over the users in expanded channels.', 'idle'),
+        tgl('idle', 'Idle probe (polls the server)', 'Shows "idle 12m" next to users of expanded channels. Idle time only exists as the answer to a per-user request.'),
+        sl('idleInterval', 'Seconds between requests', 1, 60, 1, 's', 'Shared by talking and idle times: one request in total per interval, to the user asked longest ago. Both off = no requests at all.', 'poll'),
         sl('idleMin', 'Show idle from', 0, 1800, 30, 's', 'Hide the label for users who were active more recently than this.', 'idle')),
       ui.section('Join / leave feed',
         tgl('feed', 'Join / leave feed', 'A top bar button with a list of joins, leaves, moves and disconnects (kept in memory only).'),

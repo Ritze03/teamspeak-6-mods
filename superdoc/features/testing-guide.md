@@ -77,11 +77,13 @@ Needs a server connection.
 
 ## aware
 
-1. Switch on. Expect: when someone talks in a channel its row shows a note pill with a count, then a fading dot (about 30 s). Only channels you are subscribed to light up.
+1. Switch on. Expect: when someone in another channel talks (or types), their talk circle in the tree lights up like a talker in
+   your own channel, within about one request interval (5 s by default), and goes off again after the activity. People in your own
+   channel behave exactly as stock. No badge or dot appears on channel rows.
 2. Look at the top bar. Expect: a join/leave feed button; ask someone to join, move, leave. The list shows time, nickname and from -> to.
-3. Turn on the idle probe (off by default; it sends one request every 5 s). Expect: users in expanded channels who were idle for over a minute get an
+3. Turn on the idle probe (off by default; it shares the one request per interval with the talk circles). Expect: users in expanded channels who were idle for over a minute get an
    `idle 12m` style label that keeps growing.
-4. Switch off. Expect: badges, feed button and labels gone.
+4. Switch off (or only "Show talking in other channels"). Expect: no lit circles left, feed button and labels gone.
 
 ## layout
 
@@ -134,7 +136,7 @@ Note: the result has no EXIF or GPS data (always stripped).
 
 ## Looks right in default and your own themes
 
-Switch themes (Settings -> Appearance, or the theme mod's picker) and look at the Mods page and every visible piece: net HUD and popover, aware badges
+Switch themes (Settings -> Appearance, or the theme mod's picker) and look at the Mods page and every visible piece: net HUD and popover, aware talk circles
 and feed, layout tabs, power palette, audio popover, toasts. Expect: text readable, colours follow the theme (mods use the theme's own colours),
 nothing clipped or overlapping in either the default theme or your extension themes; also at a narrow window width (the net HUD is the widest piece:
 turn off its bandwidth part).
