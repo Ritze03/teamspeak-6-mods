@@ -219,11 +219,11 @@ export const tests = [
   }],
 
   ['core: extension file registration (anchors.def + coreApi), as an x-<mod>.js would do it', async c => {
-    // what a panel/core/x-<mod>.js does, injected at runtime; the registrations are permanent in the page, so guard re-runs
-    await c.eval(`(() => { if (window.__tx) return;
-      const A = __ts6mod.anchors; window.__tx = true;
-      A.def('x.test', 'throw-away extension anchor', () => document.body);
-      __ts6mod.coreApi('xtest', (api, track, anchors) => ({ mark: () => { const n = api.el('i'); document.body.append(n); track('xtest-node', () => n.remove()); return anchors.get('x.test') === document.body; } }));
+    // what a panel/core/x-<mod>.js does, injected at runtime; the registrations are permanent in the page, so guard on the real state (a hot reload wipes it, a window flag would not)
+    await c.eval(`(() => {
+      const A = __ts6mod.anchors;
+      if (!A.check().some(r => r.name === 'x.test')) A.def('x.test', 'throw-away extension anchor', () => document.body);
+      try { __ts6mod.coreApi('xtest', (api, track, anchors) => ({ mark: () => { const n = api.el('i'); document.body.append(n); track('xtest-node', () => n.remove()); return anchors.get('x.test') === document.body; } })); } catch (e) { if (!/already registered/.test(e.message)) throw e; }
     })()`);
     c.assert((await c.eval(`__ts6mod.anchors.check()`)).some(r => r.name === 'x.test' && r.ok), 'extension anchor shows in anchors.check()');
     await c.eval(reg('t-x', `{ enable(api) { window.__xr = api.xtest.mark(); } }`));

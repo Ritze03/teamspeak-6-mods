@@ -46,6 +46,14 @@ try { cdp = await connect(cdpPort); } catch (e) { line('FAIL', `connect to the c
 const ev = async expr => cdp.eval(expr);
 const waitFor = async (expr, msg, ms = 5000) => { const t0 = Date.now(); for (;;) { let v = false; try { v = await ev(expr); } catch (e) { /* page busy */ } if (v) return; if (Date.now() - t0 > ms) throw new Error('timeout: ' + msg); await sleep(100); } };
 
+// a fresh client window is 300x400, which collapses the sidebar/tree: emulate 1280x800 for the run, cleared at the end
+let emulated = false;
+try {
+  const [w, h] = await ev('[innerWidth, innerHeight]');
+  if (w < 1000 || h < 700) { await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }); emulated = true; await sleep(500); }
+} catch (e) { /* best effort */ }
+const origRoute = await ev('__ts6mod.route().fullPath').catch(() => null);
+
 if (reload) {
   try {
     await ev(buildBundle({ examples, replace: true }));
@@ -81,7 +89,7 @@ if (loadErrors.length) for (const le of loadErrors) line('FAIL', `mod ${le.id} f
 /* ---------- 4 mod tests ---------- */
 const initial = await ev(`Object.fromEntries(__ts6mod.list().map(m => [m.id, m.enabled]))`);
 let startRoute = await ev('__ts6mod.route().fullPath');
-if (startRoute.includes('TS6Mods')) { startRoute = '/'; await ev(`__ts6mod.goto('/')`); await sleep(500); }   // the Mods page itself must not be the starting point
+if (startRoute.includes('TS6Mods') || startRoute.startsWith('/dashboard')) { startRoute = '/'; await ev(`__ts6mod.goto('/')`); await sleep(500); }   // the Mods page itself must not be the starting point
 function makeCtx(name) {
   const touched = new Set();
   const c = {
@@ -155,6 +163,8 @@ try {
   for (const [id, was] of Object.entries(initial)) if (was) await ev(`__ts6mod.setEnabled(${JSON.stringify(id)}, true, {persist: false})`).catch(() => {});
 } catch (e) { line('FAIL', 'vanilla check', String(e.message || e)); }
 
+if (origRoute) await ev(`__ts6mod.goto(${JSON.stringify(origRoute)})`).catch(() => {});
+if (emulated) await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {});
 cdp.close();
 console.log(`\n${out.pass} passed, ${out.fail} failed, ${out.skip} skipped`);
 process.exit(out.fail ? 1 : 0);
