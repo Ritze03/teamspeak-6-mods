@@ -20,7 +20,8 @@
   ];
   const KEYS = PARAMS.map(p => p[0]);
   const USER_KEYS = KEYS.filter(k => k !== 'lookahead_ms');   // per-user overrides cannot change the lookahead (one delay line length for all)
-  const values = (...v) => Object.fromEntries(KEYS.map((k, i) => [k, v[i]]));
+  /* comp_enabled is the compressor on/off switch (boolean, not a slider); presets carry it next to the numbers */
+  const values = (...v) => Object.assign(Object.fromEntries(KEYS.map((k, i) => [k, v[i]])), { comp_enabled: false });
   /*                              target maxG gate thr  ratio knee att  rel  makeup look ceil */
   const PRESETS = {
     voice: { title: 'Voice', blurb: 'Evens out speakers and tames peaks; the default everyday setting.', values: values(-20, 12, -50, -24, 3, 6, 5, 150, 4, 5, -1) },
@@ -59,9 +60,10 @@
    * key is "user_<id>" and the free-text name lives here */
   const customs = () => modApi.storage.get('presets', {});
   const isUserKey = key => typeof key === 'string' && key.startsWith('user_');
-  const presetValues = key => PRESETS[key] ? PRESETS[key].values : (isUserKey(key) && customs()[key.slice(5)] ? customs()[key.slice(5)].values : null);
-  const pick = o => Object.fromEntries(KEYS.map(k => [k, o[k]]));
-  const same = (a, b) => KEYS.every(k => Math.abs(a[k] - b[k]) < 0.006);
+  /* user presets saved before the switch existed have no comp_enabled: they keep the compressor on (what they were made with) */
+  const presetValues = key => PRESETS[key] ? PRESETS[key].values : (isUserKey(key) && customs()[key.slice(5)] ? Object.assign({ comp_enabled: true }, customs()[key.slice(5)].values) : null);
+  const pick = o => Object.assign(Object.fromEntries(KEYS.map(k => [k, o[k]])), { comp_enabled: !!o.comp_enabled });
+  const same = (a, b) => !!a.comp_enabled === !!b.comp_enabled && KEYS.every(k => Math.abs(a[k] - b[k]) < 0.006);
   const presetName = key => PRESETS[key] ? PRESETS[key].title : customs()[key.slice(5)].name;
   function checkName(name, exceptKey) {
     if (!name) return 'Give the preset a name.';
@@ -172,7 +174,7 @@
     const { ui } = api, h = ui.h;
     const absent = h('p', { class: 'mods-note' });
     const status = h('p', { class: 'mods-status' });
-    const master = ui.toggle({ title: 'Audio processing (AGC)', sub: 'Leveler, compressor and limiter on the voices you hear. Off = vanilla audio, bit-exact, no added delay.', onChange: v => { api.storage.set('master', v); patch({ enabled: v }, true); } });
+    const master = ui.toggle({ title: 'Audio processing (AGC)', sub: 'Leveler and limiter (optional compressor) on the voices you hear. Off = vanilla audio, bit-exact, no added delay.', onChange: v => { api.storage.set('master', v); patch({ enabled: v }, true); } });
     const modePills = [['whole', 'Whole stream'], ['per_speaker', 'Per speaker']].map(([m, label]) => ({ m, b: ui.pill({ label, onClick: () => patch({ mode: m }, true) }) }));
     const modeHelp = h('p', { class: 'mods-note aud-help' });
 
@@ -216,7 +218,9 @@
 
     /* parameters */
     const fields = PARAMS.map(def => paramField(ui, h, def, x => patch({ [def[0]]: x }), x => patch({ [def[0]]: x }, true)));
-    const groups = ['Leveler', 'Compressor', 'Limiter'].map(g => ui.section(g, ...fields.filter(f => PARAMS.find(p => p[0] === f.key)[7] === g).map(f => f.el)));
+    const compSw = ui.toggle({ title: 'Compressor', sub: 'Off by default: it can make room echo audible between words (make-up gain and a fast release lift the reverb tail). The leveler and limiter work without it. Off = no gain reduction and no make-up gain.', onChange: v => patch({ comp_enabled: v }, true) });
+    compSw.el.setAttribute('data-key', 'comp_enabled');
+    const groups = ['Leveler', 'Compressor', 'Limiter'].map(g => ui.section(g, ...(g === 'Compressor' ? [compSw.el] : []), ...fields.filter(f => PARAMS.find(p => p[0] === f.key)[7] === g).map(f => f.el)));
 
     /* meters */
     const mIn = ui.meter({ label: 'Input level', kind: 'in' }), mGr = ui.meter({ label: 'Gain reduction', kind: 'gr' }), mLg = ui.meter({ label: 'Leveler gain', kind: 'lg' });
@@ -328,6 +332,11 @@
         presetNote.textContent = !sel ? 'Values do not match a preset (custom). Save them as your own preset below.' : (PRESETS[sel] ? PRESETS[sel].blurb : 'Your preset.');
         nameRow.hidden = !nameMode; nameOk.textContent = nameMode === 'rename' ? 'Rename' : 'Save';
         fields.forEach(f => f.s.set(c[f.key]));
+        compSw.set(!!c.comp_enabled);
+        fields.filter(f => PARAMS.find(p => p[0] === f.key)[7] === 'Compressor').forEach(f => {   // still visible, but dimmed and locked while the compressor is off
+          f.el.classList.toggle('mods-disabled', !c.comp_enabled);
+          f.el.querySelectorAll('input').forEach(i => { i.disabled = !c.comp_enabled; });
+        });
         wholeMeters.hidden = c.mode !== 'whole'; speakersBox.hidden = c.mode !== 'per_speaker';
         syncMeters(); syncSpeakers(); renderUsers();
       }

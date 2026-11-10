@@ -100,13 +100,23 @@ client_up() { # client_up name port nick mic sink
   js "$port" "(()=>{const a=document.querySelector('#app').__vue__.appController;a.welcomeDisplayed=true;
     const c=a.openConnection({address:'127.0.0.1',port:$VOICE_PORT,nickname:'$nick',phonetic_nickname:'',identity:'',server_password:'',
       default_channel:'/',default_channel_password:'',default_channel_id:'0',sound_pack:'',show_serverquery_clients:false,send_mytsid:true,
-      announce_to_chat:false,connect_muted:false,connectTime:0});a.showItem(c);return 1})()" >/dev/null || die "$name: connect failed"
+      announce_to_chat:false,connect_muted:true,connectTime:0});a.showItem(c);return 1})()" >/dev/null || die "$name: connect failed"
   pids_of "$port" > "$RUN/$name.pid"
+  "$HERE/hide-client.sh" "$port" >/dev/null 2>&1 &   # window to the hidden special workspace (fallback for a missing windowrule); detached
 }
 connected_n() { # connected_n <port> -> number of clients visible once established, else 0
   js "$1" "(()=>{const c=document.querySelector('#app')?.__vue__?.appController?.connections?.[0]?.serverConnectionHandler;return c&&c.connectionStatus===4?[...c.GetFlatListClients()].length:0})()" 2>/dev/null
 }
 all_connected() { local c n; for c in "${CLIENTS[@]}"; do set -- $c; n=$(connected_n "$2") || return 1; [ "${n:-0}" -ge "$EXPECT" ] || return 1; done; }
+# User rule: no test client uses the real mic or speakers. Routing is by PULSE_SOURCE/PULSE_SINK (client_env: null sinks only); on top
+# of that the client's own mute toggles are set (connect_muted:true in openConnection does NOT mute on this build): the listener's mic
+# is muted (it never talks), the talkers' playback is muted (they only talk; their sink is ts6rig_deaf anyway).
+rig_mute() { # rig_mute <port> <inputMuted> <outputMuted>
+  js "$1" "(async()=>{const h=document.querySelector('#app').__vue__.appController.connections[0].serverConnectionHandler;
+    await h.SetClientSelfProperties({inputMuted:$2,outputMuted:$3});await new Promise(r=>setTimeout(r,500));
+    const p=h.ownClient.properties;return p.inputMuted===$2&&p.outputMuted===$3})()" | grep -q true
+}
+audio_audit() { node "$HERE/audio-audit.mjs" 9230 9231 9232 >&2; } # fails when a rig client has a stream on a non-ts6rig_ device
 talker_setup() { # continuous transmission (VAD off; push-to-talk is off by default) and a clean capture path (no denoise/AGC)
   js "$1" "(async()=>{const h=document.querySelector('#app').__vue__.appController.connections[0].serverConnectionHandler;
     const set=(k)=>new Promise(r=>tsclient_internal.setPreProcessorConfigValue(h.id,k,'false',s=>r(s)));
@@ -137,8 +147,10 @@ cmd_up() {
   for c in "${CLIENTS[@]}"; do set -- $c; client_up "$@"; done
   wait_for 90 "all clients connected (each must see $EXPECT clients)" all_connected
   for c in "${CLIENTS[@]}"; do set -- $c; case $1 in talker*) wait_for 15 "$1 vad off" talker_setup "$2" ;; esac; done
+  for c in "${CLIENTS[@]}"; do set -- $c; case $1 in listener) wait_for 15 "listener mic muted" rig_mute "$2" true false ;; *) wait_for 15 "$1 playback muted" rig_mute "$2" false true ;; esac; done
   [ "${RIG_STOCK_AGC:-}" = off ] && { wait_for 15 "listener stock agc off" listener_agc; }
   kick_strays
+  sleep 2; audio_audit || die "a rig client is attached to a real audio device (see above)"
   log "up: server 127.0.0.1:$VOICE_PORT, listener CDP 9230 / mod API 127.0.0.1:$MOD_PORT, talkers CDP 9231 9232"
 }
 

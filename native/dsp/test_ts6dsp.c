@@ -18,7 +18,7 @@ static void test_burst(void) {
     for (int k = 0; k < 3; k++) {
         for (int pre = 0; pre < 2; pre++) { /* pre=1: quiet speech first so the leveler is boosting */
             ts6dsp_params p; ts6dsp_default_params(&p);
-            p.lookahead_ms = las[k];
+            p.lookahead_ms = las[k]; p.comp_enabled = pre; /* both with and without the compressor */
             ts6dsp *s = ts6dsp_create(SR, 2, &p);
             float peak = 0;
             int n = SR * 6;
@@ -129,7 +129,7 @@ static void test_click(void) {
     int n = SR * 4, step_at = SR * 2;
     for (int blk = 0; blk < n / 480; blk++) {
         if (blk * 480 == step_at) {
-            p.threshold_db = -40; p.ratio = 8; p.makeup_db = 12; p.target_db = -30; p.ceiling_db = -3;
+            p.comp_enabled = 1; p.threshold_db = -40; p.ratio = 8; p.makeup_db = 12; p.target_db = -30; p.ceiling_db = -3;
             ts6dsp_set_params(s, &p);
         }
         if (blk * 480 == step_at + SR / 2) { p.enabled = 0; ts6dsp_set_params(s, &p); }
@@ -160,10 +160,35 @@ static void test_s16(void) {
     ts6dsp_destroy(s);
 }
 
+/* compressor off: the stage must not touch the signal (no reduction, no make-up) even with extreme compressor values */
+static void test_comp_bypass(void) {
+    ts6dsp_params p; ts6dsp_default_params(&p);
+    CHECK(p.comp_enabled == 0, "compressor must default to off");
+    p.target_db = 0; p.max_gain_db = 0; p.ceiling_db = 0; p.lookahead_ms = 0;
+    p.threshold_db = -60; p.ratio = 20; p.makeup_db = 12;
+    float maxd[2] = { 0, 0 }, gr[2] = { 0, 0 };
+    for (int on = 0; on < 2; on++) {
+        p.comp_enabled = on;
+        ts6dsp *s = ts6dsp_create(SR, 1, &p);
+        for (int blk = 0; blk < 100; blk++) {
+            float b[480], ref[480];
+            for (int i = 0; i < 480; i++) ref[i] = b[i] = 0.1f * sinf(2 * PI * 300 * (float)(blk * 480 + i) / SR);
+            ts6dsp_process_f32(s, b, 480);
+            for (int i = 0; i < 480; i++) { float d = fabsf(b[i] - ref[i]); if (d > maxd[on]) maxd[on] = d; }
+            ts6dsp_get_meters(s, NULL, &gr[on], NULL);
+        }
+        ts6dsp_destroy(s);
+    }
+    printf("  comp off: max deviation %.7f, gain reduction %.3f dB; comp on: deviation %.4f, gr %.2f dB\n", maxd[0], gr[0], maxd[1], gr[1]);
+    CHECK(maxd[0] < 1e-5f, "compressor off changed the signal by %.7f", maxd[0]);
+    CHECK(gr[0] == 0.f, "compressor off reports gain reduction %.3f", gr[0]);
+    CHECK(maxd[1] > 0.05f, "compressor on should alter the signal (got %.4f)", maxd[1]);
+}
+
 #define RUN(t) do { int before = fails; printf("%s\n", #t); t(); printf("%s %s\n", fails == before ? "PASS" : "FAIL", #t); } while (0)
 
 int main(void) {
-    RUN(test_burst); RUN(test_leveler); RUN(test_latency); RUN(test_denormal); RUN(test_click); RUN(test_s16);
+    RUN(test_burst); RUN(test_leveler); RUN(test_latency); RUN(test_denormal); RUN(test_click); RUN(test_s16); RUN(test_comp_bypass);
     printf(fails ? "%d check(s) FAILED\n" : "all tests passed\n", fails);
     return fails != 0;
 }

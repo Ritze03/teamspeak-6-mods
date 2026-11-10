@@ -73,7 +73,20 @@ export default async function (ctx) {
       ctx.equal((await nat('/config')).mode, 'whole', 'mode whole set');
       await ctx.openModsPage('audio', 'Parameters');
 
+      // compressor switch: off by default, locks its sliders (still visible), on unlocks them
+      const compState = () => ctx.eval(`(() => { const b = document.querySelector('${BODY} [data-key="comp_enabled"]'); const f = document.querySelector('${BODY} .aud-param[data-key="ratio"]'); return { on: !!b.querySelector('input').checked, locked: f.classList.contains('mods-disabled') && f.querySelector('input').disabled, shown: f.offsetParent !== null }; })()`);
+      await nat('/config', { comp_enabled: false }); await ctx.sleep(400);
+      let cs = await compState();
+      ctx.assert(!cs.on && cs.locked && cs.shown, 'compressor off: switch off, sliders locked but visible');
+      await click(`${BODY} [data-key="comp_enabled"] .visible`); await ctx.sleep(500);
+      ctx.equal((await nat('/config')).comp_enabled, true, 'compressor switch on -> native comp_enabled');
+      cs = await compState();
+      ctx.assert(cs.on && !cs.locked, 'compressor on: sliders unlocked');
+      await click(`${BODY} [data-key="comp_enabled"] .visible`); await ctx.sleep(500);
+      ctx.equal((await nat('/config')).comp_enabled, false, 'compressor switch off again');
+
       // every parameter through its number field
+      await nat('/config', { comp_enabled: true }); await ctx.sleep(400);
       const defs = await ctx.eval(`[...document.querySelectorAll('${BODY} .aud-param')].map(p => { const r = p.querySelector('input[type=range]'); return { key: p.dataset.key, min: +r.min, max: +r.max, step: +r.step }; })`);
       ctx.equal(defs.length, 11, 'eleven parameter fields');
       for (const d of defs) {
@@ -94,6 +107,7 @@ export default async function (ctx) {
         const c = await nat('/config');
         ctx.equal(c.preset, key, `preset ${key} selected natively`);
         ctx.assert(!(await modified()), `preset ${key}: not modified right after applying`);
+        ctx.equal(c.comp_enabled, false, `preset ${key}: compressor off`);
         if (key === 'voice') ctx.assert(near(c.target_db, -20) && near(c.ratio, 3) && near(c.ceiling_db, -1), 'voice values applied');
         if (key === 'music') ctx.assert(near(c.target_db, -18) && near(c.ratio, 2) && near(c.release_ms, 400), 'music values applied');
         if (key === 'quiet') ctx.assert(near(c.target_db, -26) && near(c.ratio, 6) && near(c.ceiling_db, -6), 'quiet night values applied');
@@ -131,7 +145,7 @@ export default async function (ctx) {
       ctx.equal((await nat('/config')).preset, 'custom', 'deleting the selected preset leaves the values as "custom"');
 
       // an unknown native preset name (the native default's legacy "balanced") with the Voice values selects Voice by value
-      const voice = { target_db: -20, max_gain_db: 12, gate_db: -50, threshold_db: -24, ratio: 3, knee_db: 6, attack_ms: 5, release_ms: 150, makeup_db: 4, lookahead_ms: 5, ceiling_db: -1 };
+      const voice = { target_db: -20, max_gain_db: 12, gate_db: -50, threshold_db: -24, ratio: 3, knee_db: 6, attack_ms: 5, release_ms: 150, makeup_db: 4, lookahead_ms: 5, ceiling_db: -1, comp_enabled: false };
       await nat('/config', { preset: 'balanced', ...voice });
       await ctx.waitFor(`!!document.querySelector('${BODY} [data-preset="voice"].on')`, 'legacy preset name with Voice values highlights Voice', 5000);
       ctx.assert(!/do not match a preset/.test(await ctx.eval(`document.querySelector('${BODY}').textContent`)), 'no "custom" note for a value-matched preset');

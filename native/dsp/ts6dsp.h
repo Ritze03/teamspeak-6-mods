@@ -15,6 +15,7 @@ typedef struct {
     float max_gain_db;   /* max boost, 0..24, default 12 */
     float gate_db;       /* input RMS below this: leveler holds, -90..-20, default -50 */
     /* compressor */
+    int   comp_enabled;  /* 0 = stage bypassed: no reduction and no make-up, default 0 (see README) */
     float threshold_db;  /* -60..0, default -24 */
     float ratio;         /* 1..20, default 3 (1 = off) */
     float knee_db;       /* 0..24, default 6 */

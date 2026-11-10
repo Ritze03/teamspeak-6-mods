@@ -24,6 +24,8 @@
 //   ctx.clientProfile()       {configDir, isolated}: the config dir of the client under test (from its process environment);
 //                             isolated = not the user's real ~/.config, i.e. a TS6MOD_PROFILE_DIR client. Never write a real profile.
 //   ctx.skip(part, reason)    print a SKIP line for a part of the test that cannot run on this client (does not fail the test)
+// Isolated clients (never the real profile) are muted (mic + speakers) for the whole run and their window is parked on the hidden Hyprland
+// workspace: tools/test/mute-test-clients.mjs, tools/rig/hide-client.sh (user rule, superdoc/features/test-rig.md "Audio isolation").
 // Side effects of the run itself are put back at the end: mod switches (in memory), the persisted mods blob, route, window size
 // override, clipboard text.
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -33,6 +35,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { connect } from '../cdp/cdp.mjs';
 import { buildBundle, listMods } from '../cdp/bundle.mjs';
+import { startMuting } from './mute-test-clients.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const a = process.argv.slice(2), val = n => a.flatMap((x, i) => (x === n ? [a[i + 1]] : []));
@@ -73,6 +76,20 @@ function clientProfile() {   // read HOME / XDG_CONFIG_HOME of the process that 
 }
 const profile = clientProfile();
 console.log(`        client: CDP ${cdpPort}, ${profile.isolated ? 'isolated profile' : 'REAL profile (file-writing parts are skipped)'}, ${(await onTestServer()) ? 'local test server' : 'not the local test server (server-side parts are skipped)'}`);
+
+/* user rule: a test client never uses the user's real microphone or speakers (the user talks on TeamSpeak while tests run).
+ * Isolated clients are throw-away: mute capture + playback (app toggles AND the audio streams, re-applied every 500 ms so a test that
+ * reconnects a client stays muted; nothing is restored) and park the window on the hidden Hyprland workspace. Covers the second client
+ * given by AWARE_P2_CDP / TS6MOD_CHAT_CDP2 too. The user's real client is never muted. Why/how: superdoc/features/test-rig.md. */
+const secondPorts = [process.env.AWARE_P2_CDP, process.env.TS6MOD_CHAT_CDP2].filter(Boolean).map(Number).filter((p, i, l) => p && p !== cdpPort && l.indexOf(p) === i);
+let stopMuting = () => {};
+if (profile.isolated) {
+  const ports = [cdpPort, ...secondPorts];
+  stopMuting = await startMuting({ ports, log: t => console.log('        ' + t) });
+  spawnSync(join(root, 'tools', 'rig', 'hide-client.sh'), ports.map(String), { stdio: 'ignore' });   // fallback when no windowrule moves it
+  const st = await ev(`(() => { const h = (__ts6mod.anchors.get('app.controller').connections || []).map(c => c.serverConnectionHandler).filter(Boolean)[0]; const me = h && h.ownClient; return me ? [!!me.properties.inputMuted, !!me.properties.outputMuted] : null; })()`).catch(() => null);
+  console.log(`        audio isolation: ports ${ports.join(', ')} muted (own mic/speaker state [input, output] = ${JSON.stringify(st)}${st ? '' : ': not connected yet, re-applied on connect'})`);
+}
 
 /* clipboard text: some tests copy into it (copy-ID menu, diagnostics); put the user's text back at the end */
 let clip0 = null;
@@ -225,6 +242,7 @@ if (clip0 !== null) {
   try { await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true }); await ev(`navigator.clipboard.writeText(${JSON.stringify(clip0)}).then(() => 1, () => 0)`); } catch (e) { /* best effort */ }
   await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {});
 }
+stopMuting();
 cdp.close();
 console.log(`\n${out.pass} passed, ${out.fail} failed, ${out.skip} skipped`);
 process.exit(out.fail ? 1 : 0);
