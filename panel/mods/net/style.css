@@ -1,0 +1,19 @@
+.net-hud { display: inline-flex; align-items: center; gap: 5px; margin: 0 4px; padding: 2px 6px; border-radius: 12px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--mods-fg); cursor: pointer; white-space: nowrap; user-select: none; }
+.net-hud[hidden], .net-pop[hidden], .net-v[hidden] { display: none; }
+.net-hud:hover, .net-hud:focus-visible { background: var(--mods-hover); outline: none; }
+.net-glyph { width: 12px; height: 12px; fill: currentColor; opacity: .8; }
+.net-v.warn { color: var(--mods-warn); }
+.net-v.bad { color: var(--mods-error); }
+.net-bw { opacity: .75; }
+.net-pop { position: fixed; z-index: 100000; width: 280px; padding: 10px 12px; border-radius: 8px; color: var(--mods-fg); background: var(--net-pop-bg); border: 1px solid var(--net-pop-line); box-shadow: 0 6px 24px rgba(0, 0, 0, .35); backdrop-filter: blur(8px); font-size: 12px; }
+.net-pop-title { font-weight: 600; margin-bottom: 6px; }
+.net-graph { display: block; width: 100%; height: 64px; background: var(--mods-field-bg); border-radius: 4px; }
+.net-ping-line { fill: none; stroke: var(--mods-accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.net-ping-dot { fill: var(--mods-accent); }
+.net-loss-bar { fill: var(--mods-error); opacity: .8; }
+.net-thr { stroke: var(--mods-warn); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; opacity: .7; }
+.net-rows { margin: 8px 0; }
+.net-row { display: flex; justify-content: space-between; gap: 10px; padding: 1px 0; }
+.net-k { color: var(--mods-muted); }
+.net-val { text-align: right; font-variant-numeric: tabular-nums; }
+.net-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
