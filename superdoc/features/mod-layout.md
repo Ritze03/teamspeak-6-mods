@@ -12,6 +12,9 @@ All TeamSpeak names live in `panel/core/x-layout.js` (core extension file, `api.
    (the client's own close action), the active tab has an accent border, a count badge shows unread messages. While tabs are on,
    the left column is collapsed to its 62 px icon column; switching tabs off (or the mod) puts it back exactly as it was (if it
    was already collapsed it stays collapsed).
+   Server tab highlight: a server tab is active when it is the client's current activity (`currentActivityIdentifier`); the
+   highlight clears only when a shown chat tab is active. Why: the own channel's chat reports `isActive` whenever the server
+   view shows that channel, so with chat tabs off the server tab would otherwise never light up.
 2. **Servers as tabs too** (own switch): one tab per connected server in front of the chat tabs; click shows the server. No x
    (closing would disconnect).
 3. **Density slider** (60-140 %, default 100 = vanilla): scales the channel tree row heights live, no restart. Chat spacing is not
