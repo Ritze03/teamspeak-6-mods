@@ -60,11 +60,6 @@ A mod is a folder with an `index.js` using a small API: [superdoc/features/ts6-m
 Start the modded client and run `node tools/test/run-all.mjs`; it checks the UI anchors and the native audio signature and says what
 needs fixing (see the docs).
 
-## Terms of service
-
-Modifying the client may violate TeamSpeak's terms of service. This project patches no files, but it changes the client's behaviour
-at runtime. Use it at your own risk.
-
 ## More
 
 [Testing guide](superdoc/features/testing-guide.md) · [Docs overview](superdoc/architecture/overview.md)
