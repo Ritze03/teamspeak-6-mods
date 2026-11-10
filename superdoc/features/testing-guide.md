@@ -139,6 +139,8 @@ and feed, layout tabs, power palette, audio popover, toasts. Expect: text readab
 nothing clipped or overlapping in either the default theme or your extension themes; also at a narrow window width (the net HUD is the widest piece:
 turn off its bandwidth part).
 
+Isolated test clients must be launched with `--ozone-platform=x11 --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling` (`tools/rig/rig:CLIENT_FLAGS` passes them). A hidden or backgrounded client never runs `requestAnimationFrame`, so tests that wait on it fail (audio popover closes, layout sidebar collapse, slot modal `close()`, contextMenu item without icon).
+
 Note on the runner's vanilla step (`tools/test/run-all.mjs`): it first waits until no native request has been made for 1.2 s. The last core
 test hot-reloads the core, and the new core's one-shot audio vanilla guard (`panel/core/x-audio.js:vanillaGuard`, one `GET /config` per page
 load) could otherwise land inside the 600 ms "no polling" window and fail it intermittently. With `--examples` the vanilla step only

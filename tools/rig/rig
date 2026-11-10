@@ -24,6 +24,8 @@ log() { echo "rig: $*" >&2; }
 die() { log "$*"; exit 1; }
 js() { node "$HERE/js.mjs" "$@"; }                                  # js <cdp-port> <expr|@file>
 cdp_up() { curl -sf "http://127.0.0.1:$1/json/version" >/dev/null 2>&1; }
+# Test clients must not be backgrounded/occluded: a hidden client never fires requestAnimationFrame and tests that wait on it fail.
+CLIENT_FLAGS=(--ozone-platform=x11 --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling)
 pids_of() { pgrep -f -- "--remote-debugging-port=$1( |\$)" || true; }  # main process(es) of the client on a CDP port
 wait_for() { # wait_for <seconds> <description> <cmd...>
   local t=$1 d=$2; shift 2; local i
@@ -90,7 +92,7 @@ client_up() { # client_up name port nick mic sink
   [ -n "${RIG_KEEP_PROFILES:-}" ] || rm -rf "$RIG/profiles/$name"
   mkdir -p "$RIG/profiles/$name"
   ( cd "$RIG/profiles/$name" && env $(client_env "$name" "$mic" "$sink") "${extra[@]}" ccorral -- "$TS_BIN" \
-      --remote-debugging-port="$port" > client.log 2>&1 & ) > /dev/null 2>&1   # detached from our stdio (so "rig up | tail" ends); the client segfaults on SIGTERM at exit and the job report must not leak
+      --remote-debugging-port="$port" "${CLIENT_FLAGS[@]}" > client.log 2>&1 & ) > /dev/null 2>&1   # detached from our stdio (so "rig up | tail" ends); the client segfaults on SIGTERM at exit and the job report must not leak
   wait_for 60 "$name CDP port $port" cdp_up "$port"
   wait_for 60 "$name UI" js "$port" "document.querySelector('#app').__vue__.appController.connections.length>=0"
   # Skip the first-launch wizard (splash/Terms/sign-in; it appears on every fresh profile and blocks everything) and connect

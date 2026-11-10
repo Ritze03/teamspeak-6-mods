@@ -273,6 +273,10 @@ real client once posted test messages and moved the user on a real server; the g
 care. The full coverage needs an isolated client (`TS6MOD_PROFILE_DIR`) connected to a local test server; see
 [test-rig.md](test-rig.md).
 
+Isolated test clients must be launched with `--ozone-platform=x11 --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling` (`tools/rig/rig:CLIENT_FLAGS` passes them). A hidden or backgrounded client never runs `requestAnimationFrame`, so tests that wait on it fail (audio popover closes, layout sidebar collapse, slot modal `close()`, contextMenu item without icon).
+
+The tests also have to hold on a real, busy profile (several mods already on, many channels, own chats open): count only nodes of your own mod (`[data-ts6mod="<id>"]`, e.g. tree-row decorations), only tree rows rendered inside the scroller, and wait for a node to exist before clicking it (pages and tabs render a moment after `ctx.openModsPage` returns).
+
 **`test.mjs` contract:** `export default async function (ctx) { ... }`; throwing or a failed assert = FAIL. `ctx`:
 
 | Member | Meaning |
