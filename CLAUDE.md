@@ -1,13 +1,19 @@
 # teamspeak-6-mods
 
 Mods for the TeamSpeak 6 client (Linux), added without patching its files. Stack: a C `LD_PRELOAD`
-module with a DSP core (`native/`, whole-stream AGC on the output write), a Node launcher + CDP injector
-(`launcher/ts6-mod`, `tools/cdp/`), and an injected JS "Mods" settings page (`panel/`). Rule: every feature has its
-own switch and defaults to off; everything off = vanilla client. Start modded: `launcher/ts6-mod`.
+module (`native/`: whole-stream AGC on the output write, per-speaker inline detour `ts6hook`, DSP core `ts6dsp`), a Node
+launcher + CDP injector + test runner (`launcher/ts6-mod`, `tools/cdp/`, `tools/test/`), and an injected JS mod framework
+(`panel/core/`) with one directory per mod (`panel/mods/`: audio, dashboard, net, power, aware, layout, theme, chat, files)
+behind a "Mods" settings page. Rule: every feature has its own switch and defaults to off; everything off = vanilla
+client. Start modded: `launcher/ts6-mod`. User docs: `README.md`, `superdoc/features/testing-guide.md`.
 
-Feature docs (plain links, read on demand): `superdoc/features/agc.md` (AGC mod, hook, control API, build/launch),
-`superdoc/features/mods-panel.md` (panel, Dashboard button), `superdoc/features/ts6-modding-surface.md` (client
-internals reachable from outside), `superdoc/features/ts6-ui-extension-points.md` (UI hooks).
+Feature docs (plain links, read on demand): `superdoc/features/ts6-mod-api.md` (framework, API, slots, anchors,
+extension files, tests, launcher, how to build a mod), `superdoc/features/mods-panel.md` (Mods page, Dashboard button),
+`superdoc/features/agc.md` (audio mod, control API, presets, per-user audio), `superdoc/features/per-speaker-hook.md`
+(native per-sender detour), `superdoc/features/test-rig.md` (local audio rig), mods: `superdoc/features/mod-net.md`,
+`mod-power.md`, `mod-aware.md`, `mod-layout.md`, `mod-theme.md`, `mod-chat.md`, `mod-files.md`, research:
+`superdoc/features/ts6-modding-surface.md` (client internals reachable from outside),
+`superdoc/features/ts6-ui-extension-points.md` (UI hooks).
 
 <!-- superdoc:start v4 -->
 ## Docs: read before you touch, update after you change

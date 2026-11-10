@@ -48,6 +48,44 @@ plain strings and fine. If a mod needs something the api lacks, add a slot/helpe
 (3) use only `api.*` for anything that has to be undone (a raw `setInterval` in a mod is not cleaned up);
 (4) style only with `--mods-*` tokens (below) so default and custom themes both work.
 
+## How to build your own mod
+
+A minimal mod from zero, using only the api. Samples to copy from: `panel/mods/dashboard/` (smallest real mod), `panel/mods/net/`
+(settings, polling, popover), `panel/examples/ext-provider/` and `ext-consumer/` (extensions and slots).
+
+1. **Folder.** `panel/mods/hello/` with `index.js` (the folder name is the mod id). Everything in `panel/mods/*/index.js` is bundled
+   automatically (`tools/cdp/bundle.mjs:buildBundle`); a `style.css` next to it is added on enable and removed on disable.
+2. **Register.** `index.js` calls `ts6mod.register({id: 'hello', title, description, enable(api), settings?(api, container)})`.
+   The Mods page shows a card with a switch (default off). Nothing runs until the user switches it on.
+3. **Use a slot** in `enable(api)`: `api.topBar.add({title, icon, onClick})`, `api.sidebar.addIcon`, `api.contextMenu.client.add`,
+   `api.treeRow.decorate`, `api.chatInput.onBeforeSend`, `api.toast` (table above). Timers, listeners and observers only through
+   `api.interval/listen/observe/onDom`.
+4. **Settings UI.** `api.storage.get(key, default)` / `.set(key, value)` persist; build the controls in `settings(api, container)` with
+   the kit (`api.ui.toggle({title, sub, checked, onChange})`, `api.ui.slider({label, min, max, step, unit, value, onInput})`,
+   `api.ui.note`, `api.ui.button`, ...), as `panel/mods/net/index.js` does. Style only with the `--mods-*` tokens.
+5. **Cleanup is automatic.** Whatever went through the api is undone when the switch goes off; write `disable()` only for state outside
+   the api. Do not touch the DOM or timers directly in `enable`.
+6. **A TS name needed?** Do not put it in the mod (the lint fails). Add `panel/core/x-hello.js` (an extension file, see below): define an
+   anchor with `boot.anchors.def`, expose a small API with `boot.core.coreApi('hello', ...)`, and call `api.hello.*` from the mod.
+7. **Test.** `panel/mods/hello/test.mjs` with `export default async function (ctx) {...}`; model it on `panel/mods/dashboard/test.mjs`:
+   start from off, `ctx.enable`, assert the marked DOM (`[data-ts6mod="hello"]`), `ctx.disable`, `ctx.assertClean('hello')`.
+8. **Run it.** With a modded client running (`launcher/ts6-mod`): `node tools/cdp/mods-reload.mjs --mod hello` hot-loads just that mod
+   (no restart, other mods stay as they are), switch it on in Settings -> Mods, then
+   `node tools/test/run-all.mjs --only hello` runs lint, anchor check and that mod's test (without `--only` everything runs).
+
+```js
+// panel/mods/hello/index.js
+ts6mod.register({
+  id: 'hello', title: 'Hello', description: 'Adds a button to the top bar.',
+  enable(api) {
+    api.topBar.add({ title: 'Hello', icon: 'settings-addons', onClick: () => api.toast('Hello', api.storage.get('text', 'It works')) });
+  },
+  settings(api, container) {
+    container.append(api.ui.toggle({ title: 'Shout', sub: 'Use capitals in the toast.', checked: !!api.storage.get('shout', false), onChange: v => api.storage.set('shout', v) }).el);
+  },
+});
+```
+
 ## API reference
 
 `api` is created per mod on enable. Handles returned by `add`-style slot calls are `{remove(), update?(patch)}`; helper
@@ -75,7 +113,7 @@ Status column: all slots below were run against the live client by `tools/test/c
 | `api.version()` | `{api, client, build, chrome}`, e.g. build number for gating | `getClientLibVersion`, `getChromeVersion` (fetched before mods are enabled) | yes |
 | `api.nav.route() / onDashboard() / showDashboard()` | route info; open the Dashboard (same action as the main-menu entry) | router, `showItem(dashboard)` | yes |
 | `api.audio.stock() / setStockAgc(v) / setExperimentalAgc(v)` | read/set TeamSpeak's own playback AGC options (persist; the experimental one reopens the playback stream) | `audioSettings` model, see [ts6-modding-surface.md](ts6-modding-surface.md) | read yes; setters not run by tests (they change user settings) |
-| `api.native.get(path)` / `.post(path, body)` / `.available()` | native module control API (`/config`, `/status`, `/meters`) through the CDP binding `ts6modNative` (the page cannot open http://) | binding + injector proxy | yes (audio mod) |
+| `api.native.get(path)` / `.post(path, body)` / `.available()` | native module control API (`/config`, `/status`, `/meters`, `/speakers`, `/speaker`) through the CDP binding `ts6modNative` (the page cannot open http://) | binding + injector proxy | yes (audio mod) |
 | `api.storage.get(key, default) / set / remove / all` | per-mod persisted settings | in memory + debounced `saveJsonBlob` | yes |
 | `api.addStyle(css)` | `<style>` removed on disable (a mod's `style.css` is added the same way) | - | yes |
 | `api.el(tag, props, ...kids)` | create a DOM node marked as this mod's (`data-ts6mod`); props: `class`, `on:{event:fn}`, `style`, attributes/properties | - | yes |
@@ -242,7 +280,7 @@ isolated and are ignored. Example for a second client: `TS6MOD_PROFILE_DIR=<dir>
 `tools/cdp/mods-inject.mjs [--cdp-port N] [--port N] [--examples]` injects (`Page.addScriptToEvaluateOnNewDocument` + `Runtime.evaluate`;
 **never `Page.reload`**, it wipes the client's auto-connect state) one script built by `tools/cdp/bundle.mjs`: `panel/core/*.js` (anchors,
 core first), then every `panel/mods/*/index.js` with its `style.css`, then `panel/examples/*` only with `--examples`. It is idempotent
-(`window.__ts6mod` guard) and keeps the `ts6modNative` binding that proxies `/config`, `/status`, `/meters` to the native control API.
+(`window.__ts6mod` guard) and keeps the `ts6modNative` binding that proxies `/config`, `/status`, `/meters`, `/speakers`, `/speaker` to the native control API (the allow-list is a regex in `mods-inject.mjs`; anything else is refused) and the narrow image-file reader binding `ts6modReadImage` (see [mod-files.md](mod-files.md)).
 
 `node tools/cdp/mods-reload.mjs [--cdp-port N] [--examples] [--mod <id>]...` hot-swaps the panel code from disk into the running client
 (whole core + mods, or just the named mod directories); mods that were on stay on. Use it while developing a mod instead of restarting.
