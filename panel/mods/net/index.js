@@ -1,8 +1,8 @@
-/* Net mod: connection quality HUD in the top bar (ping, packet loss, optional bandwidth), a popover with a 60 s sparkline,
+/* Net mod: connection quality HUD in the server pane's bottom bar next to the client's own connection status, or in the top bar (ping, packet loss, optional bandwidth), a popover with a 60 s sparkline,
  * stats, the channel codec and a "Copy diagnostics" button, optional threshold alerts. Data comes from api.net (panel/core/x-net.js).
  * Polls only while the mod is on AND a connection is established. Docs: superdoc/features/mod-net.md. */
 (() => {
-  const DEFAULTS = { interval: 2, alert: false, pingMax: 150, lossMax: 5, bandwidth: true };
+  const DEFAULTS = { interval: 2, alert: false, pingMax: 150, lossMax: 5, bandwidth: true, position: 'bottom' };
   const HISTORY_MS = 60000, ALERT_COOLDOWN_MS = 60000, ALERT_SAMPLES = 2, RECOVER = 0.8;
   const SVG = 'http://www.w3.org/2000/svg';
   let live = null;   // the running instance (settings changes are applied through it)
@@ -36,10 +36,10 @@
     title: 'Connection quality',
     group: 'Server & network', order: 1,
     icon: 'M5 19v-3 M10 19v-7 M15 19V8 M20 19V4',
-    summary: 'Ping and packet loss in the title bar. Click the readout for a graph and details.',
-    keywords: ['Update interval', 'Show bandwidth', 'Alerts', 'Ping limit', 'Loss limit', 'Copy diagnostics', 'HUD'],
-    status: api => { const s = Object.assign({}, DEFAULTS, api.storage.all()); return 'every ' + s.interval + ' s' + (s.alert ? ' · alerts' : ''); },
-    description: 'Ping and packet loss in the top bar, with a 60 s history graph, codec readout, optional alerts and a copy-diagnostics button.',
+    summary: 'Ping and packet loss next to the connection status at the bottom of the channel tree. Click the readout for a graph and details.',
+    keywords: ['Update interval', 'Show bandwidth', 'Position', 'Bottom bar', 'Top bar', 'Alerts', 'Ping limit', 'Loss limit', 'Copy diagnostics', 'HUD'],
+    status: api => { const s = Object.assign({}, DEFAULTS, api.storage.all()); return 'every ' + s.interval + ' s' + (s.position === 'top' ? ' · top bar' : '') + (s.alert ? ' · alerts' : ''); },
+    description: 'Ping and packet loss in the bottom bar of the channel tree (or the top bar), with a 60 s history graph, codec readout, optional alerts and a copy-diagnostics button.',
     enable(api) {
       const S = () => Object.assign({}, DEFAULTS, api.storage.all());
       let samples = [], busy = false, stopTick = null, updates = 0, popOpen = false, lastMeta = null;
@@ -52,7 +52,16 @@
         keydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePop(); } },
       } }, glyph(), elPing, elLoss, elBw);
       hud.setAttribute('data-net', 'hud');
-      api.topBar.add(hud);
+      /* placement: bottom bar (first item of the stock connection-status group) or top bar; switched live from the settings */
+      let unplace = null, placedAt = null;
+      function place() {
+        const at = S().position === 'top' ? 'top' : 'bottom';
+        if (at === placedAt) return;
+        if (unplace) unplace();
+        placedAt = at; hud.classList.toggle('net-bottom', at === 'bottom');
+        if (at === 'top') { const h = api.topBar.add(hud); unplace = () => h.remove(); } else unplace = api.net.bottomBar.mount(hud);
+        if (popOpen) placePop();
+      }
 
       /* ---- popover (a body-level node so a clipping toolbar cannot cut it; removed in disable()) ---- */
       const th = api.net.theme();
@@ -67,7 +76,8 @@
 
       function placePop() {
         const r = hud.getBoundingClientRect(), w = pop.offsetWidth || 280;
-        pop.style.top = Math.round(r.bottom + 6) + 'px';
+        const below = r.bottom + 6, ph = pop.offsetHeight || 260;   // under the HUD, or above it when it sits at the bottom of the window
+        pop.style.top = Math.round(below + ph > window.innerHeight - 8 ? Math.max(8, r.top - 6 - ph) : below) + 'px';
         pop.style.left = Math.round(Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2))) + 'px';
       }
       function openPop() { popOpen = true; pop.hidden = false; renderPop(); placePop(); refreshMeta(); }
@@ -175,9 +185,9 @@
         stopTick = api.interval(tick, Math.max(1, S().interval) * 1000);
         renderHud();
       }
-      restart(); tick();
+      place(); restart(); tick();
 
-      live = { apply: () => { restart(); if (popOpen) renderPop(); }, teardown: () => { pop.remove(); hud.remove(); } };
+      live = { apply: () => { place(); restart(); if (popOpen) renderPop(); }, teardown: () => { pop.remove(); hud.remove(); } };
     },
     disable() { if (live) { live.teardown(); live = null; } },
     settings(api, box) {
@@ -187,12 +197,14 @@
       box.append(
         ui.section('Display',
           ui.slider({ label: 'Update interval', min: 1, max: 5, step: 1, unit: 's', value: s.interval, help: 'How often connection statistics are requested.', onInput: v => put('interval', v) }).el,
+          (() => { const pills = [['bottom', 'Bottom bar'], ['top', 'Top bar']].map(([v, label]) => { const p = ui.pill({ label, on: s.position === v, onClick: () => { put('position', v); pills.forEach(x => x.p.set(x.v === v)); } }); p.el.setAttribute('data-pos', v); return { v, p }; });
+            return ui.h('div', { class: 'mods-row', title: 'Bottom bar: next to the connection status under the channel tree. Top bar: next to the microphone and speaker buttons.' }, ui.h('span', { class: 'mods-label' }, 'Position'), ...pills.map(x => x.p.el)); })(),
           ui.toggle({ title: 'Show bandwidth', sub: 'Incoming and outgoing data rate next to ping and loss.', checked: s.bandwidth, onChange: v => put('bandwidth', v) }).el),
         ui.section('Alert limits',
           ui.toggle({ title: 'Alerts', sub: 'A notification when ping or packet loss stay above the limits below (at most one per minute and metric).', checked: s.alert, onChange: v => put('alert', v) }).el,
           ui.slider({ label: 'Ping limit', min: 30, max: 1000, step: 10, unit: 'ms', value: s.pingMax, onInput: v => put('pingMax', v) }).el,
           ui.slider({ label: 'Loss limit', min: 1, max: 50, step: 1, unit: '%', value: s.lossMax, onInput: v => put('lossMax', v) }).el),
-        ui.note('The HUD appears in the top bar while you are connected. Click it for the history graph, codec and the copy-diagnostics button.'),
+        ui.note('The readout appears while you are connected. Click it for the history graph, codec and the copy-diagnostics button.'),
       );
     },
   });

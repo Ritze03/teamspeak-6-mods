@@ -7,6 +7,11 @@
   A.def('net.requestConnectionInfo', 'bridge: tsclient_internal.requestConnectionInfo(schid, clientId, cb(status, stats))', () => typeof window.tsclient_internal.requestConnectionInfo === 'function');
   A.def('net.ownClientId', 'displayed connection handler exposes ownClientId and connectionStatus', () => { const h = A.get('app.connections')[0]?.serverConnectionHandler; return !h || ('ownClientId' in h && 'connectionStatus' in h); }, true);
 
+  /* bottom bar of the server pane; its right group (.ts-server-informative-buttons: connection status + server events) is counted
+     by the bar's own auto-collapse (isSmall = bar < label copy + right group), so a node placed in it never overlaps the left button */
+  const rightGroups = () => A.$$('.ts-server-status-bar > .ts-server-informative-buttons');
+  A.def('net.statusBar', 'server pane bottom bar right group: .ts-server-status-bar > .ts-server-informative-buttons (stock connection status + events)', () => rightGroups()[0], true);
+
   let requests = 0;   // statistics requests sent since page load (test hook: "no polling while off")
   Object.defineProperty(window, '__ts6modNetRequests', { configurable: true, get: () => requests });
 
@@ -45,6 +50,39 @@
           channelName: c ? c.displayName || null : null,
           codecId: num(cp.codec), codec: num(cp.codec) !== null ? CODECS[cp.codec] || 'codec ' + cp.codec : null, quality: num(cp.codecQuality),
         };
+      },
+      /* bottom bar of the shown server pane: mount(el) keeps el as the first item of the stock network-status group (re-placed when
+         the client rebuilds the bar, e.g. on a server or view switch); returns remove().
+         el gets a max-width = what the bar has left with the Create Channel button collapsed (44 px reserve, 0 when it is hidden) and
+         the stock items beside it, so a narrow pane clips el (it wraps and drops trailing parts) instead of pushing the stock items out.
+         Why not let the group shrink: the bar's own collapse compares its width to the group's width, a shrinking group would never
+         trigger it. */
+      bottomBar: {
+        available: () => rightGroups().length > 0,
+        mount(el) {
+          let bar = null;
+          const ro = new ResizeObserver(() => fit());
+          const fit = () => {
+            const g = el.parentElement; if (!g || !bar || !g.isConnected) return;
+            const cs = getComputedStyle(bar), es = getComputedStyle(el);
+            const outer = bar.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+            const cc = bar.querySelector(':scope > .ts-server-status-constructive-buttons:not(.ts-hidden)');
+            const reserve = cc && cc.getClientRects().length ? 44 : 0;
+            const others = g.getBoundingClientRect().width - el.getBoundingClientRect().width - parseFloat(es.marginLeft) - parseFloat(es.marginRight);
+            const mw = Math.max(0, Math.floor(outer - reserve - others)) + 'px';
+            if (el.style.maxWidth !== mw) el.style.maxWidth = mw;
+          };
+          const put = () => {
+            const g = rightGroups().find(x => x.offsetParent) || rightGroups()[0];
+            if (g && (el.parentElement !== g || g.firstElementChild !== el)) g.prepend(el);
+            if (g && g.parentElement !== bar) { ro.disconnect(); bar = g.parentElement; ro.observe(bar); [...bar.children].forEach(c => ro.observe(c)); }   // children too: the Create Channel group can be hidden by another mod
+            fit();
+          };
+          const unRo = track('net-bottom-fit', () => { ro.disconnect(); el.style.maxWidth = ''; });
+          put();
+          const un = api.onDom(put, { debounce: 60 });
+          return () => { un(); unRo(); el.remove(); };
+        },
       },
       /* surface colours for a popover that matches the active theme (default and custom) */
       theme: () => ({ bg: 'var(--ts-context-menu-background, #1b1e27)', line: 'var(--ts-divider-bg-color, rgba(128,128,128,.3))' }),

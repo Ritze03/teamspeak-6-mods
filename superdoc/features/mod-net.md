@@ -1,6 +1,7 @@
 # Net mod (connection quality)
 
-A top-bar HUD with live **ping** and **packet loss** (and optionally data rate in/out) for the displayed server connection.
+A HUD with live **ping** and **packet loss** (and optionally data rate in/out) for the displayed server connection, in the bottom bar of the channel tree pane next to the client's own connection-status
+icons (default) or in the top bar.
 Click it for a popover with a 60 s history graph, min/avg/max, the current channel's codec and a **Copy diagnostics** button.
 Optional alerts. Default **off**; off removes the HUD, popover, timers and all statistics requests (vanilla client).
 Built on [ts6-mod-api.md](ts6-mod-api.md); files: `panel/mods/net/` (`index.js`, `style.css`, `test.mjs`) and the core extension
@@ -8,11 +9,23 @@ Built on [ts6-mod-api.md](ts6-mod-api.md); files: `panel/mods/net/` (`index.js`,
 
 ## Behaviour
 
-- **HUD** (`index.js:enable`): an element added with `api.topBar.add(element)`; shows `<ping> ms`, `<loss> %` and, if enabled,
-  `↓in ↑out` per second (short units to fit the narrow toolbar). Hidden while not connected. Ping turns warning-coloured over
+- **HUD** (`index.js:enable`, `place()`): one element, placed by the `position` setting (switched live):
+  - **Bottom bar** (default): `api.net.bottomBar.mount(el)` makes it the first item of the stock connection-status group (the
+    rounded dark pill with the connection bars and the server-events button), so it reads as part of the stock stats. Text in the
+    bar's own colour at 13 px (the stock button-label size); the own signal glyph is not shown there (the stock bars sit right next
+    to it). It stays visible with the Create Channel button expanded, collapsed, compact or hidden (layout mod), and a narrow pane
+    clips it from the end (data rate first, then loss) instead of pushing the stock items out of the bar: at the minimum pane width
+    (220 px) ping and loss still fit with a short ping (measured `0 ms 0.0 %`); a 3-digit ping may drop the loss there.
+    Why the bottom bar by default: the user asked for ping/loss to sit next to the stock network stats there and always show.
+    Why inside the stock group and not a sibling: the bar's own auto-collapse (see [mod-layout.md](mod-layout.md) Create Channel)
+    measures that group, so the label of Create Channel folds away early enough to leave the HUD its room.
+  - **Top bar**: `api.topBar.add(element)` next to the mic/speaker buttons (the old placement).
+  Shows `<ping> ms`, `<loss> %` and, if enabled, `↓in ↑out` per second (short units). Hidden while not connected. Ping turns warning-coloured over
   the ping limit, loss error-coloured over the loss limit (the limits are the alert limits, also with alerts off).
   In a narrow toolbar the HUD shrinks and the data rate wraps onto a clipped second line instead of spilling under the next pane.
-- **Popover**: body-level fixed node under the HUD (a clipping toolbar cannot cut it). Opens on click or Enter/Space, closes on
+  In the bottom bar it must have `position: relative` like the stock items: the group's background is an absolutely positioned
+  `::before` that otherwise paints over static children.
+- **Popover**: body-level fixed node under the HUD, or above it when there is no room below (bottom bar) (a clipping toolbar cannot cut it). Opens on click or Enter/Space, closes on
   Escape, outside click, disconnect or disable. Contains: sparkline (ping line, loss bars, dashed ping-limit line, last 60 s),
   ping now + jitter, ping min/avg/max, loss now (up/down) and avg/max, bandwidth, codec, channel, buttons.
 - **Codec readout**: codec name and quality (0-10) of the channel you are in, from the channel's properties. Re-read when the
@@ -36,6 +49,7 @@ Built on [ts6-mod-api.md](ts6-mod-api.md); files: `panel/mods/net/` (`index.js`,
 | `alert` | false | enable threshold toasts |
 | `pingMax` | 150 | ping limit in ms (30-1000) |
 | `lossMax` | 5 | loss limit in % (1-50) |
+| `position` | `bottom` | `bottom` (bottom bar of the channel tree) or `top` (top bar); pills "Bottom bar / Top bar" in Display |
 
 ## Mechanism
 
@@ -51,7 +65,12 @@ Built on [ts6-mod-api.md](ts6-mod-api.md); files: `panel/mods/net/` (`index.js`,
 ### `x-net.js` additions
 
 - Anchors: `net.requestConnectionInfo` (bridge method exists), `net.ownClientId` (optional; connection handler has `ownClientId`
-  and `connectionStatus`).
+  and `connectionStatus`), `net.statusBar` (optional; `.ts-server-status-bar > .ts-server-informative-buttons`, the stock
+  connection-status group of the bottom bar).
+- `api.net.bottomBar`: `available()`, `mount(el)` -> `remove()`. Prepends `el` to the shown bottom bar's status group and re-places
+  it on DOM changes (the bar is rebuilt per server/view); a ResizeObserver on the bar and its children sets `el.style.maxWidth` =
+  bar content width - 44 px reserve for the collapsed Create Channel button (0 when that group is not displayed) - the stock items.
+  Why not a shrinkable group: the bar's collapse compares its width with the group's, a shrinking group would never trigger it.
 - `api.net`: `connected()`, `poll()` (normalised sample `{t, ping, jitter, loss, lossUp, lossDown, bwIn, bwOut}` or null), `meta()`
   (`{serverVersion, serverPlatform, channelName, codecId, codec, quality}` or null), `theme()` (popover surface colours as CSS
   values built from TS custom properties, so default and custom themes match).
@@ -70,14 +89,19 @@ appear and the update counter (`data-updates`) increases; bandwidth shown by def
 drawn and the popover is on screen; Copy diagnostics reports an outcome (and, if the clipboard can be read, the block contains
 the expected lines); Escape closes the popover; with alerts on and an impossible limit exactly one toast fires and none repeats
 within the cooldown; the bandwidth switch on the mod's page hides/shows the bandwidth part live (clicked twice to restore the
-saved value); disable removes HUD and popover, `assertClean`, and the request counter stops. Without a connection the live
-part is skipped (and the test asserts no requests). Manual check: also look at the HUD in the real top bar in the default and a
-custom theme.
+saved value); placement: the HUD is the first item of the bottom bar's connection-status group, does not overlap the stock
+status item or the Create Channel button and stays inside the bar, ping visible, both at the current and at the minimum pane width
+(via `__ts6modLayoutDev.paneWidth`, restored; skipped without the layout core file); the Position pills move it to the top bar and
+back (the original settings object is restored); disable removes HUD and popover, `assertClean`, and the request counter stops. Without a connection the live
+part is skipped (and the test asserts no requests). Manual check: look at the bottom bar in the default and a custom theme, wide and at the minimum pane
+width, with each Create Channel style.
 
 ## Known limits
 
 - Only the displayed connection is measured (not every tab).
 - Loss percent cannot be provoked on loopback; the alert path is tested with a ping limit instead.
-- Not visually verified in the top bar on the test client: the account-confirmation wall of a fresh test profile covers the main UI
-  (the toolbar element exists with a sane size and position; the popover was checked in a screenshot).
-- At narrow window widths the HUD uses the space of the toolbar; turn off bandwidth to shrink it.
+- On a fresh test profile the account-confirmation wall (`.ts-first-launch` overlay) covers the main UI; for screenshots hide it with
+  an injected style in the test client (the UI below is live). Bottom-bar look verified in the default and graphite themes.
+- Top bar: at narrow window widths the HUD uses the space of the toolbar; turn off bandwidth to shrink it.
+- Bottom bar at a narrow pane: when the readout is clipped, the HUD box keeps its maximum width, so a small empty gap can remain
+  before the stock icons.

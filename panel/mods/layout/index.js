@@ -2,14 +2,18 @@
  * row-height slider for the channel tree, and switches that hide individual UI parts. Every feature is its own switch and
  * starts off. All TeamSpeak specifics are in panel/core/x-layout.js (api.layout). Docs: superdoc/features/mod-layout.md. */
 (() => {
-  const DEF = { chatTabs: false, serverTabs: false, density: 100, hide: {} };
+  const DEF = { chatTabs: false, serverTabs: false, density: 100, hide: {}, ccStyle: 'vanilla' };
+  const CC = [['vanilla', 'Vanilla', 'Stock button: the label folds away when the pane is narrow, and the folded button is a circle.'], ['compact', 'Compact', 'Always just the circle with the plus icon (hover shows the name).'], ['hidden', 'Hidden', 'No Create Channel button.']];
+  /* the Create Channel style; older versions had a "createChannel" hide switch, which counts as Hidden until a style is picked */
+  const ccOf = st => { const v = st.get('ccStyle'); return CC.some(c => c[0] === v) ? v : (st.get('hide', {}) || {}).createChannel ? 'hidden' : DEF.ccStyle; };
   let M = null;   // state of the enabled mod, shared with the settings page
 
   function enable(api) {
     const L = api.layout, st = api.storage;
-    const S = { chatTabs: !!st.get('chatTabs', DEF.chatTabs), serverTabs: !!st.get('serverTabs', DEF.serverTabs), density: +st.get('density', DEF.density) || 100, hide: Object.assign({}, st.get('hide', {})) };
+    const S = { chatTabs: !!st.get('chatTabs', DEF.chatTabs), serverTabs: !!st.get('serverTabs', DEF.serverTabs), density: +st.get('density', DEF.density) || 100, hide: Object.assign({}, st.get('hide', {})), ccStyle: ccOf(st) };
+    delete S.hide.createChannel;   // migrated into ccStyle (dropped from the stored set on the next change)
     const stripOn = () => S.chatTabs || S.serverTabs;
-    let strip = null, stripIcons = [], stopWatch = null, stopFrame = null, hideStyle = null, sidebarDone = false;
+    let strip = null, stripIcons = [], stopWatch = null, stopFrame = null, hideStyle = null, sidebarDone = false, ccStyle = null;
 
     /* ---------- tab strip ---------- */
     function buildTab(t) {
@@ -68,16 +72,26 @@
       if (keys.length) hideStyle = api.addStyle(L.declutter.css(keys));
     }
 
+    /* ---------- Create Channel button ---------- */
+    function applyCc() {
+      if (ccStyle) { ccStyle(); ccStyle = null; }
+      ccStyle = api.addStyle(L.createChannel.css(S.ccStyle));
+      if (S.ccStyle === 'hidden') L.createChannel.clear(); else L.createChannel.label();
+    }
+    api.onDom(() => { if (S.ccStyle !== 'hidden') L.createChannel.label(); }, { debounce: 200 });   // the bar is rebuilt per server / view
+
     /* ---------- apply everything from S ---------- */
     function applyAll() {
       if (stripOn()) { if (!strip) startStrip(); else render(); } else stopStrip();
       L.density.set(S.density / 100);
       applyHide();
+      applyCc();
     }
     M = {
       S, L,
       setTabs(which, on) { S[which] = !!on; st.set(which, !!on); applyAll(); },
       setDensity(v) { S.density = v; st.set('density', v); L.density.set(v / 100); },
+      setCc(v) { S.ccStyle = v; st.set('ccStyle', v); if (S.hide.createChannel !== undefined || (st.get('hide', {}) || {}).createChannel !== undefined) st.set('hide', Object.assign({}, S.hide)); applyCc(); },
       setHide(key, on) { if (on) S.hide[key] = true; else delete S.hide[key]; st.set('hide', Object.assign({}, S.hide)); applyHide(); },
     };
     applyAll();
@@ -91,7 +105,9 @@
     const srvT = ui.toggle({ title: 'Servers as tabs too', sub: 'Adds a tab for every connected server in front of the chat tabs.', checked: S.serverTabs, onChange: v => M.setTabs('serverTabs', v) });
     const dens = ui.slider({ label: 'Channel tree row height', min: 60, max: 140, step: 5, unit: '%', value: S.density, help: '100% is the stock spacing; lower is more compact, higher more comfortable. Applies immediately.', onInput: v => M.setDensity(v) });
     const reset = ui.button({ label: 'Reset to 100%', kind: 'link', onClick: () => { M.setDensity(100); dens.set(100); } });
-    box.append(ui.section('Tabs', chatT.el, srvT.el), ui.section('Density', dens.el, h('div', { class: 'mods-row' }, reset)));
+    const ccPills = CC.map(([v, label, tip]) => { const p = ui.pill({ label, on: S.ccStyle === v, onClick: () => { M.setCc(v); ccPills.forEach(x => x.p.set(x.v === v)); } }); p.el.title = tip; p.el.setAttribute('data-cc', v); return { v, p }; });
+    const ccRow = h('div', { class: 'mods-row', 'data-lay': 'cc' }, h('span', { class: 'mods-label' }, 'Create Channel button (bottom of the channel tree)'), ...ccPills.map(x => x.p.el));
+    box.append(ui.section('Tabs', chatT.el, srvT.el), ui.section('Density', dens.el, h('div', { class: 'mods-row' }, reset)), ui.section('Create Channel button', ccRow));
     /* one box per group of hide switches ("Hide: Server view", ...); the help text is the hover tooltip */
     const groups = new Map();
     for (const it of L.declutter.items) {
@@ -105,10 +121,10 @@
     title: 'Layout',
     group: 'Interface', order: 1,
     icon: 'M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M3 9h18 M9 9v11',
-    summary: 'Chat and server tabs in the title bar, channel tree row height, and hiding parts of the window you never use.',
-    keywords: ['Chat tabs in the title bar', 'Servers as tabs too', 'Channel tree row height', 'Density', 'Hide', 'Announcement bar', 'Server banner', 'File transfer info', 'Create Channel button', 'AFK button', 'Bookmarks section', 'Popular Servers'],
-    status: api => { const s = api.storage, hid = Object.values(s.get('hide', {})).filter(Boolean).length, d = +s.get('density', 100) || 100;
-      return [s.get('chatTabs') ? 'Chat tabs' : '', s.get('serverTabs') ? 'Server tabs' : '', d !== 100 ? 'Rows ' + d + '%' : '', hid ? hid + ' hidden' : ''].filter(Boolean).join(' · '); },
+    summary: 'Chat and server tabs in the title bar, channel tree row height, Create Channel button style, and hiding parts of the window you never use.',
+    keywords: ['Chat tabs in the title bar', 'Servers as tabs too', 'Channel tree row height', 'Density', 'Hide', 'Announcement bar', 'Server banner', 'File transfer info', 'Create Channel button', 'Compact', 'AFK button', 'Bookmarks section', 'Popular Servers'],
+    status: api => { const s = api.storage, hid = Object.entries(s.get('hide', {})).filter(([k, v]) => v && k !== 'createChannel').length, d = +s.get('density', 100) || 100, cc = ccOf(s);
+      return [s.get('chatTabs') ? 'Chat tabs' : '', s.get('serverTabs') ? 'Server tabs' : '', d !== 100 ? 'Rows ' + d + '%' : '', cc !== 'vanilla' ? 'Create Channel ' + cc : '', hid ? hid + ' hidden' : ''].filter(Boolean).join(' · '); },
     description: 'Chat tabs (and server tabs) in the title bar, a row-height slider for the channel tree, and switches to hide parts of the interface. Everything starts off.',
     enable,
     disable() { M = null; },

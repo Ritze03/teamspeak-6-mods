@@ -1,7 +1,8 @@
 # Layout mod (`panel/mods/layout/`)
 
-Three independent layout features behind one mod switch (default off, like every mod; see [ts6-mod-api.md](ts6-mod-api.md)).
-Inside the mod every feature has its own switch and starts off, so enabling the mod alone changes nothing.
+Independent layout features behind one mod switch (default off, like every mod; see [ts6-mod-api.md](ts6-mod-api.md)).
+Inside the mod every feature has its own switch and starts off; the one exception is the Create Channel button's collapsed shape
+(feature 5: with the mod on, the stock auto-collapsed button is drawn as a circle).
 All TeamSpeak names live in `panel/core/x-layout.js` (core extension file, `api.layout`); `panel/mods/layout/index.js` and
 `style.css` contain none.
 
@@ -19,15 +20,28 @@ All TeamSpeak names live in `panel/core/x-layout.js` (core extension file, `api.
    (closing would disconnect).
 3. **Density slider** (60-140 %, default 100 = vanilla): scales the channel tree row heights live, no restart. Chat spacing is not
    touched.
-4. **Hide switches** (10), each hides exactly one element by CSS: announcement bar above the tree ("Is this your server?"),
-   server banner card on the info page, "File Transfer Info" card, Create Channel button, AFK button, "Create a TeamSpeak
+4. **Hide switches** (9), each hides exactly one element by CSS: announcement bar above the tree ("Is this your server?"),
+   server banner card on the info page, "File Transfer Info" card, AFK button, "Create a TeamSpeak
    Community" button, Bookmarks section, Dashboard "Start your own Community" banner, Dashboard Popular Servers, Dashboard Chats
    (both Dashboard hide switches together hide the whole servers card).
+5. **Create Channel button** (bottom bar of the channel tree pane), three styles:
+   - **Vanilla** (default): the stock button. The client folds its label away when the pane is too narrow (see Mechanism); stock
+     draws the folded button as a 42x30 stadium, the mod draws it as a 30 px circle. The expanded pill is untouched.
+   - **Compact**: always the 30 px circle with the plus icon, label hidden; same click (it is the stock button).
+   - **Hidden**: no button (the old "Create Channel button" hide switch).
+   In Vanilla and Compact the button gets the localized label as `title`/`aria-label` (the stock button has neither, so the
+   circle would otherwise have no tooltip or accessible name).
+   Why the circle fix belongs to Vanilla: the user asked for the stock auto-collapse to stay but to end as a full circle; Vanilla is
+   "the stock behaviour" and the round collapse is the only change it makes. Compact is "always folded". Mod off = the stadium again.
 
-## Settings (`api.storage`, mod id `layout`; Settings -> Mods -> Layout card -> its page, boxes Tabs, Density, Hide: <group>)
+## Settings (`api.storage`, mod id `layout`; Settings -> Mods -> Layout card -> its page, boxes Tabs, Density, Create Channel button, Hide: <group>)
 
-`chatTabs` (bool), `serverTabs` (bool), `density` (number, percent), `hide` (`{key: true}`, keys: `announce hostBanner transfer
-createChannel afk join bookmarks dashStart dashPopular dashChats`). Defaults: false, false, 100, `{}`.
+`chatTabs` (bool), `serverTabs` (bool), `density` (number, percent), `ccStyle` (`vanilla | compact | hidden`, three pills),
+`hide` (`{key: true}`, keys: `announce hostBanner transfer afk join bookmarks dashStart dashPopular dashChats`).
+Defaults: false, false, 100, `vanilla`, `{}`.
+Migration (`index.js:ccOf`): without a stored `ccStyle`, an old `hide.createChannel: true` means Hidden. Nothing is written on
+enable; the old key is dropped from the stored `hide` set the first time a style pill is clicked. Why lazy: enabling the mod must not
+rewrite the settings blob.
 
 ## Mechanism
 
@@ -39,6 +53,7 @@ createChannel afk join bookmarks dashStart dashPopular dashChats`). Defaults: fa
 | sidebar | window component `windowLayout.setSlotCollapsed(0, bool)` (anchor `layout.window`); the original state is recorded and restored through a ledger entry |
 | density | the tree component reads `--ts-tree-*-height-*` once at mount into data fields and the cache refresh is broken. So: override the four CSS vars with `calc((<original raw value>) * f) !important` (original read from the computed custom property), measure each var with a hidden probe element, write the numbers into the tree component's fields and call its `flattenServer()`. New trees pick the vars up on their own. Undo removes the style and re-measures |
 | hide | one `<style>` from `api.layout.declutter.css(keys)` |
+| Create Channel | bottom bar `.ts-server-status-bar` (component `server-status-bar`, anchor `layout.statusBar`): `isSmall = bar content width < width of a hidden always-titled copy of the button group (.ts-hidden, visibility hidden) + right group`, fed by a ResizeObserver; with `isSmall` the visible group is rendered with `show-with-title=false` (no `.tsv-tool-button-title` child). So the collapse trigger is the bar width vs. the measured widths, not a container query or class. The mod adds one `<style>` from `api.layout.createChannel.css(style)`: Vanilla matches the visible button only `:not(:has(.tsv-tool-button-title))`, Compact always plus hides the title, Hidden hides every `.ts-server-status-constructive-buttons` (measuring copy too, so the right group gets the room). `api.layout.createChannel.label()` (re-run on DOM changes) sets title/aria-label, its ledger entry removes them (anchor `layout.createChannel`) |
 
 Why: a tab strip as an overlay computed from rects (instead of injecting into the bar) because the strip should span the free
 width even when the bar is split over two panes. Why collapse the sidebar: the user's spec (tabs replace the wide chat list).
@@ -59,10 +74,17 @@ Not on the local test server (`ctx.onTestServer()` false) the chat-tab part only
 never opens a private chat (`x-layout.js:openChats(n>0)` itself refuses unless every connection is local). Hide keys the client
 or theme already hides while the mod is off are only checked for "hidden while on" (graphite hides the join button).
 
+Create Channel part: wide pane (>= 520 px, set through the layout slot like a divider drag, not saved): Vanilla leaves the pill
+as stock, title set; pane at its minimum (220 px): stock collapse, button is a circle (width = height), right group inside the bar;
+Compact: circle, no label, title kept; Hidden: not displayed; an old `hide.createChannel` without `ccStyle` = hidden; off: stock pill,
+no title, clean ledger; the Layout page has the three pills with Vanilla on. The pane width is restored afterwards.
+
 Manual: unread badge (let another user write to you while another tab is shown), many tabs (the strip scrolls with the wheel),
 custom themes.
 
 ## Known limits
+
+- The pane-width test helper (`__ts6modLayoutDev.paneWidth`) resizes the main pane live while the test runs (restored, not saved).
 
 - Unread badges and the graphite/aurora look were not verified live (tokens only; unread logic is a read of the chat's counter).
 - The strip hides itself when the free title-bar zone is under 60 px.
