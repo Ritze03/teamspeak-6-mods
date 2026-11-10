@@ -10,7 +10,7 @@ ts6mod.register({
   status: api => { const g = (k, d) => { const v = api.storage.get(k, undefined); return v === undefined ? d : v; }; return 'over ' + g('limitMB', 5) + ' MB, ' + g('maxRes', 2560) + ' px'; },
   description: 'Images over the upload limit are scaled down and re-encoded to fit automatically (chat drop/paste/attach, Files tab). Off = vanilla.',
   enable(api) {
-    const DEF = { maxRes: 2560, format: 'jpeg', alpha: 'webp', margin: 5, limitMB: 5, chat: true, filesTab: true };
+    const DEF = { maxRes: 2560, format: 'jpeg', alpha: 'webp', margin: 5, limitMB: 5, chat: true, filesTab: true, notifyDone: true };
     const cfg = () => ({ ...DEF, ...(api.storage.all() || {}) });
     const CAP = { 'chat-drop': 5e6, 'chat-paste': 5242880 };          // the stock client's own limits for these two routes
     const effLimit = (route, c) => Math.min(c.limitMB * 1e6, CAP[route] ?? Infinity);
@@ -89,7 +89,7 @@ ts6mod.register({
         const out = new File([r.blob], name, { type: r.type });
         const info = { name: file.name, from: { bytes: file.size, type: file.type }, to: { name, bytes: out.size, w: r.w, h: r.h, type: r.type, quality: r.quality }, route, ms: Math.round(performance.now() - t0) };
         (window.__ts6modFilesLog = window.__ts6modFilesLog || []).push(info);
-        api.toast('Image compressed', `${file.name}: ${fmtMB(file.size)} -> ${fmtMB(out.size)} (${r.w}x${r.h}, ${r.type.split('/')[1]}${r.quality ? ' q' + Math.round(r.quality * 100) : ''})`);
+        if (c.notifyDone) api.toast('Image compressed', `${file.name}: ${fmtMB(file.size)} -> ${fmtMB(out.size)} (${r.w}x${r.h}, ${r.type.split('/')[1]}${r.quality ? ' q' + Math.round(r.quality * 100) : ''})`);
         return out;
       } catch (e) {
         api.toast('Image not compressed', `${file.name}: ${e.message || e}`); return null;
@@ -105,7 +105,7 @@ ts6mod.register({
   },
 
   settings(api, box) {
-    const { ui } = api, DEF = { maxRes: 2560, format: 'jpeg', alpha: 'webp', margin: 5, limitMB: 5, chat: true, filesTab: true };
+    const { ui } = api, DEF = { maxRes: 2560, format: 'jpeg', alpha: 'webp', margin: 5, limitMB: 5, chat: true, filesTab: true, notifyDone: true };
     const get = k => { const v = api.storage.get(k, undefined); return v === undefined ? DEF[k] : v; };
     const set = (k, v) => api.storage.set(k, v);
     const group = (label, opts, key) => {
@@ -129,6 +129,8 @@ ts6mod.register({
       ui.section('Format',
         group('Output format', [['jpeg', 'JPEG'], ['webp', 'WebP']], 'format'),
         group('Transparent images', [['webp', 'WebP (keeps transparency)'], ['png', 'PNG (lossless, shrinks pixels)'], ['flatten', 'White background']], 'alpha')),
+      ui.section('Notifications',
+        tg('notifyDone', 'Notify when an image was compressed', 'Shows a toast with the old and new size. Errors are always shown.')),
       ui.note('Re-encoding always drops metadata (EXIF, GPS, color profile); the rotation is applied to the pixels first. Animated GIF/PNG/WebP, other formats and files under the limit are not touched.'),
       status);
   },
