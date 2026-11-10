@@ -1,4 +1,4 @@
-.net-hud { display: inline-flex; align-items: center; gap: 5px; margin: 0 4px; padding: 2px 6px; border-radius: 12px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--mods-fg); cursor: pointer; white-space: nowrap; user-select: none; flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.net-hud { display: inline-flex; align-items: center; gap: 6px; margin: 0 4px; padding: 2px 6px; border-radius: 12px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--mods-fg); cursor: pointer; white-space: nowrap; user-select: none; flex: 0 1 auto; min-width: 0; overflow: hidden; }
 /* a narrow pane (the toolbar sits in the left pane's title bar): what does not fit wraps to a second line, which is clipped, so the
    data rate drops out as a whole instead of running under the next pane */
 .net-hud { flex-wrap: wrap; align-content: flex-start; row-gap: 12px; height: 21px; box-sizing: border-box; }
@@ -9,10 +9,10 @@
 .net-v { display: inline-block; text-align: right; }
 /* constant width: every field has a reserved width for its worst case (tabular digits), so changing values move nothing; clipping at a
    narrow pane only drops whole fields (they wrap), never reflows them */
-.net-ping, .net-loss { min-width: 7ch; }   /* "9999 ms", "100.0 %" */
-.net-bw { display: inline-flex; gap: 5px; min-width: 0; }
+.net-ping, .net-loss { min-width: 6ch; }   /* "999 ms", "99.9 %" (a wider value just grows the field) */
+.net-bw { display: inline-flex; gap: 4px; min-width: 0; }
 .net-bw[hidden] { display: none; }
-.net-bwv { display: inline-block; min-width: 7ch; text-align: right; }   /* "↓1023k" */
+.net-bwv { display: inline-block; min-width: 5.5ch; text-align: right; }   /* "↓12.3k" */
 .net-v.warn { color: var(--mods-warn); }
 .net-v.bad { color: var(--mods-error); }
 .net-bw { opacity: .75; }
@@ -30,6 +30,6 @@
 .net-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 /* bottom bar: sits in the client's connection-status group, so it takes the bar's own text colour and the 13 px of its button labels */
 /* position: relative like the stock items, so it paints above the group's rounded ::before background */
-.net-hud.net-bottom { position: relative; color: inherit; font-size: 13px; margin: 0 6px 0 -4px; padding: 2px 5px; height: 22px; align-self: center; }
+.net-hud.net-bottom { position: relative; color: inherit; font-size: 13px; margin: 0 4px 0 -4px; padding: 2px 4px; height: 22px; align-self: center; }
 /* the stock connection-status bars sit right next to it, so the own signal glyph is dropped there (room for ping + loss at the minimum pane width) */
 .net-hud.net-bottom > .net-glyph { display: none; }
