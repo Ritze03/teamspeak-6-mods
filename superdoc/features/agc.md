@@ -16,7 +16,7 @@ launcher/ts6-mod [client args]            # same as the desktop entry plus the m
 ```
 Needs Node >= 22 and a C compiler (builds `native/libts6mod.so` on first start). Env: `TS6MOD_TS_BIN`, `TS6MOD_CDP_PORT` (default 9222),
 `TS6MOD_PORT` (control API, default 38998, loopback), `TS6MOD_PROFILE_DIR`, `TS6MOD_WRAP`: table in [ts6-mod-api.md](ts6-mod-api.md)
-("Launcher"). Closing the client ends the launcher. Settings -> Mods -> "Audio (AGC and per-user audio)".
+("Launcher"). Closing the client ends the launcher. Settings -> Mods -> "Audio" card.
 
 ## Modes
 
@@ -106,13 +106,22 @@ Requests with an `Origin` other than `tsui://...` or a `Host` other than loopbac
 Code: `panel/mods/audio/index.js:settings`. Edits apply live (150 ms debounce, only changed keys) and are saved by the native module,
 so they survive a client restart.
 
+Layout (the Mods page frame is in [mods-panel.md](mods-panel.md)): four tabs (`api.ui.tabs`) of boxes. **Processing**: box "Audio
+processing" (master switch + status line) and box "Mode". **Presets**: box "Presets". **Parameters**: boxes Leveler, Compressor, Limiter
+and, depending on the mode, Live meters or Speakers (live). **Per-user**: boxes "Per-user settings" and "TeamSpeak playback AGC". The tab
+bar's right side shows a live summary (`statusBits(true)`: mode or "AGC off", preset (or "custom values"), added delay); the card on the
+overview shows the short form (`register.status`). Footer: "Edits apply live and survive a restart." + **Reset to Voice** (applies the
+Voice preset) + **Save as preset…** (switches to Presets and opens the name field). Parameter help texts are hover tooltips (the "?" mark).
+Without the native module only the note above the tabs and the playback AGC box are shown. While the master switch is off the
+mode/preset/parameter/meter boxes are dimmed (still editable).
+
 - **Master switch** "Audio processing (AGC)", **Mode** pills (whole stream / per speaker, help text under them), a status line
   (processing/passthrough, delay, speakers, hook state).
 - **Presets**: pills for the built-ins and your own; "modified" badge when the current values differ from the selected preset
   (tolerance 0.006); buttons Save as..., Update preset (own preset, modified), Rename, Delete, Revert to preset. Own presets are in the
   mod's storage as `{id: {name, values}}`; the native `preset` key is `user_<id>` (the native parser only takes `[A-Za-z0-9_-]`, free-text
   names cannot go there). Deleting the selected preset sets `preset:"custom"`.
-- **Parameters** (each: slider + number field + unit + a visible one-line help; ranges = the DSP's): Leveler (target, max boost, noise gate),
+- **Parameters** (each: slider + number field + unit, help as hover tooltip; ranges = the DSP's): Leveler (target, max boost, noise gate),
   Compressor (threshold, ratio, knee, attack, release, make-up), Limiter (lookahead, ceiling). `PARAMS` in `index.js`.
 - **Live meters**: whole mode: input level, gain reduction, leveler gain, input/output peak (`/meters`, 120 ms). Per-speaker mode: a list
   of known speakers with nickname (client id -> nickname through `api.peers.list`), level, gain reduction, leveler gain, an "override"
@@ -181,7 +190,7 @@ equal the current ones (`selected()`), so a fresh install shows Voice instead of
 
 ## Test procedure
 
-- Automated: `node tools/test/run-all.mjs --cdp-port <cdp> --control-port <ctl> --only audio` (`panel/mods/audio/test.mjs`): vanilla rule,
+- Automated: `node tools/test/run-all.mjs --cdp-port <cdp> --control-port <ctl> --only audio` (`panel/mods/audio/test.mjs`; it opens the Audio page and picks the tab each part needs via `ctx.openModsPage('audio', <tab>)`): vanilla rule,
   master and mode switches through the real controls, all 11 parameter fields, the three built-in presets (values, "modified"), custom
   preset save/update/rename/delete, value-matched selection for an unknown native preset name, back-to-back off/on (native master equals the stored one), per-user popover (volume, mute, boost, bypass, custom param, no lookahead field, re-push after mod
   off/on, reset), cleanup. Safe on a real client: the master stays off while editing (the per-speaker hook is never installed by it),

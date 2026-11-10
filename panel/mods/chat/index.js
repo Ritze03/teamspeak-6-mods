@@ -182,6 +182,11 @@ const DEFAULTS = { delayMs: 0, inputLimit: 40000 };
 if (typeof ts6mod !== 'undefined') ts6mod.register({
   id: 'chat',
   title: 'Split long messages',
+  group: 'Chat & files', order: 1,
+  icon: 'M4 5h16v11H9l-5 4z',
+  summary: 'Sends a message that is over the server limit as several parts instead of failing.',
+  keywords: ['Delay between parts', 'Input limit', 'Splitting'],
+  status: api => (+api.storage.get('delayMs', DEFAULTS.delayMs) || 0) + ' ms between parts',
   description: 'Raises the chat input limit and sends text that is longer than the server accepts as several messages (split at paragraphs, lines or words; code blocks are closed and reopened, never broken).',
   enable(api) {
     const cfg = () => ({ delayMs: +api.storage.get('delayMs', DEFAULTS.delayMs) || 0, inputLimit: +api.storage.get('inputLimit', DEFAULTS.inputLimit) || DEFAULTS.inputLimit });
@@ -218,13 +223,13 @@ if (typeof ts6mod !== 'undefined') ts6mod.register({
   settings(api, box) {
     const { ui } = api;
     const get = (k, d) => +api.storage.get(k, d) || d;
-    box.append(
+    box.append(ui.section('Splitting',
       ui.slider({ label: 'Delay between parts', min: 0, max: 3000, step: 50, unit: 'ms', value: +api.storage.get('delayMs', DEFAULTS.delayMs) || 0,
         help: 'Pause between the parts of a split message. 0 sends them back to back (a flooding server may need a few hundred ms).',
         onInput: v => api.storage.set('delayMs', v) }).el,
       ui.slider({ label: 'Input limit', min: 8192, max: 100000, step: 1000, unit: 'chars', value: get('inputLimit', DEFAULTS.inputLimit),
         help: 'How much text the message box accepts (stock: the server limit, 8192). Applied the next time a chat is shown.',
-        onInput: v => api.storage.set('inputLimit', v) }).el,
+        onInput: v => api.storage.set('inputLimit', v) }).el),
       ui.note('Messages that fit the server limit are sent untouched. The hint above the message box shows how many parts a long text will become.'));
   },
 });

@@ -31,6 +31,11 @@
   ts6mod.register({
     id: 'theme',
     title: 'Theme tools',
+    group: 'Interface', order: 2,
+    icon: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 3v18',
+    summary: 'Pick an installed theme, reload it, or have it reload live while you edit the theme files.',
+    keywords: ['Theme', 'Rescan themes', 'Reload theme now', 'Live reload', 'Poll interval'],
+    status: () => (S.live ? 'Live reload every ' + S.ms + ' ms' : ''),
     description: 'For theme developers: switch the extension theme from here, reload it with one click, or let "live reload" watch the active theme file and apply changes (including tree row heights) without a restart.',
     enable(api) {
       modApi = api; busy = false;
@@ -74,7 +79,7 @@
         status.textContent = (src ? 'Active theme file: ' + src.split('?')[0].replace(/^.*\/extension\//, '') : 'No extension theme active.') + (S.last ? ' | ' + S.last : '');
         err.textContent = S.error; err.hidden = !S.error;
       }
-      box.append(ui.row2(h('span', { class: 'mods-label' }, 'Theme'), sel, rescan), ui.row2(reload), liveT.el, ms.el, status, err);
+      box.append(ui.section('Theme', ui.row2(sel, rescan), ui.row2(reload), status, err), ui.section('Live reload', liveT.el, ms.el));
       view = { sync };
       fill(); ms.set(S.ms); sync();
       api.interval(sync, 1500);   /* the active theme can change from the stock Appearance page */

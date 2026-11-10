@@ -34,6 +34,11 @@
   ts6mod.register({
     id: 'net',
     title: 'Connection quality',
+    group: 'Server & network', order: 1,
+    icon: 'M5 19v-3 M10 19v-7 M15 19V8 M20 19V4',
+    summary: 'Ping and packet loss in the title bar. Click the readout for a graph and details.',
+    keywords: ['Update interval', 'Show bandwidth', 'Alerts', 'Ping limit', 'Loss limit', 'Copy diagnostics', 'HUD'],
+    status: api => { const s = Object.assign({}, DEFAULTS, api.storage.all()); return 'every ' + s.interval + ' s' + (s.alert ? ' · alerts' : ''); },
     description: 'Ping and packet loss in the top bar, with a 60 s history graph, codec readout, optional alerts and a copy-diagnostics button.',
     enable(api) {
       const S = () => Object.assign({}, DEFAULTS, api.storage.all());
@@ -57,7 +62,7 @@
       const svg = document.createElementNS(SVG, 'svg'); svg.setAttribute('class', 'net-graph'); svg.setAttribute('viewBox', '0 0 240 64'); svg.setAttribute('preserveAspectRatio', 'none');
       const rows = api.el('div', { class: 'net-rows' });
       const copyBtn = api.ui.button({ label: 'Copy diagnostics', onClick: () => doCopy() });
-      const settingsBtn = api.ui.button({ label: 'Settings', kind: 'link', onClick: () => { closePop(); api.settings.open(); } });
+      const settingsBtn = api.ui.button({ label: 'Settings', kind: 'link', onClick: () => { closePop(); api.settings.show(); } });
       pop.append(api.el('div', { class: 'net-pop-title' }, 'Connection quality'), svg, rows, api.el('div', { class: 'net-actions' }, copyBtn, settingsBtn));
 
       function placePop() {
@@ -180,11 +185,13 @@
       const put = (k, v) => { api.storage.set(k, v); live && live.apply(); };
       const s = S();
       box.append(
-        ui.slider({ label: 'Update interval', min: 1, max: 5, step: 1, unit: 's', value: s.interval, help: 'How often connection statistics are requested.', onInput: v => put('interval', v) }).el,
-        ui.toggle({ title: 'Show bandwidth', sub: 'Incoming and outgoing data rate next to ping and loss.', checked: s.bandwidth, onChange: v => put('bandwidth', v) }).el,
-        ui.toggle({ title: 'Alerts', sub: 'A notification when ping or packet loss stay above the limits below (at most one per minute and metric).', checked: s.alert, onChange: v => put('alert', v) }).el,
-        ui.slider({ label: 'Ping limit', min: 30, max: 1000, step: 10, unit: 'ms', value: s.pingMax, onInput: v => put('pingMax', v) }).el,
-        ui.slider({ label: 'Loss limit', min: 1, max: 50, step: 1, unit: '%', value: s.lossMax, onInput: v => put('lossMax', v) }).el,
+        ui.section('Display',
+          ui.slider({ label: 'Update interval', min: 1, max: 5, step: 1, unit: 's', value: s.interval, help: 'How often connection statistics are requested.', onInput: v => put('interval', v) }).el,
+          ui.toggle({ title: 'Show bandwidth', sub: 'Incoming and outgoing data rate next to ping and loss.', checked: s.bandwidth, onChange: v => put('bandwidth', v) }).el),
+        ui.section('Alert limits',
+          ui.toggle({ title: 'Alerts', sub: 'A notification when ping or packet loss stay above the limits below (at most one per minute and metric).', checked: s.alert, onChange: v => put('alert', v) }).el,
+          ui.slider({ label: 'Ping limit', min: 30, max: 1000, step: 10, unit: 'ms', value: s.pingMax, onInput: v => put('pingMax', v) }).el,
+          ui.slider({ label: 'Loss limit', min: 1, max: 50, step: 1, unit: '%', value: s.lossMax, onInput: v => put('lossMax', v) }).el),
         ui.note('The HUD appears in the top bar while you are connected. Click it for the history graph, codec and the copy-diagnostics button.'),
       );
     },

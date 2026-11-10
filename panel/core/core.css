@@ -1,15 +1,18 @@
 /* ts6-mods core styles. Only classes prefixed mods-; colours come from the --mods-* tokens, which anchors.js maps
- * to the active TS theme's own custom properties (so default and custom themes both look right). */
+ * to the active TS theme's own custom properties (so default and custom themes both look right). Surfaces of the Mods page
+ * (cards, boxes, icon tiles) are the theme's text colour mixed into transparency, so they are a shade lighter on a dark
+ * theme and a shade darker on a light one. */
 /* the hidden attribute must win over the display rules below (.mods-field grid, .mods-row flex, ...) */
 .mods-card [hidden], [class*="mods-"][hidden] { display: none !important; }
-.mods-card { color: var(--mods-fg); }
+.mods-card { color: var(--mods-fg);
+  --mods-surface: color-mix(in srgb, var(--mods-fg) 5%, transparent);
+  --mods-surface-2: color-mix(in srgb, var(--mods-fg) 10%, transparent);
+  --mods-surface-on: color-mix(in srgb, var(--mods-accent) 9%, var(--mods-surface));
+  --mods-soft-line: color-mix(in srgb, var(--mods-fg) 12%, transparent); }
 .mods-title { margin: 4px 0 8px; font-size: 15px; font-weight: 600; }
 .mods-subtitle { margin: 14px 0 6px; font-size: 13px; font-weight: 600; opacity: .9; }
-.mods-mod { margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--mods-line); }
-.mods-mod:last-child { border-bottom: 0; }
-.mods-mod-body { margin: 2px 0 6px 6px; padding-left: 10px; border-left: 2px solid var(--mods-line); }
 .mods-disabled { opacity: .5; }
-.mods-dim .mods-field, .mods-dim .mods-adv { opacity: .55; }
+.mods-dim .mods-field, .mods-dim .mods-adv, .mods-dim.mods-box > :not(.mods-subtitle) { opacity: .55; }
 .mods-status { margin: -4px 0 10px; }
 .mods-absent, .mods-note { margin: 4px 0; opacity: .8; line-height: 1.4; }
 .mods-note { font-size: 12px; }   /* help text: the size of TS's own setting subtitles, not the card's body size */
@@ -18,16 +21,19 @@
 .mods-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
 .mods-label { min-width: 150px; }
 .mods-pill { border: 1px solid var(--mods-field-line); background: transparent; color: inherit; border-radius: 14px; padding: 3px 14px; cursor: pointer; font: inherit; }
-.mods-pill.on { background: var(--mods-accent); color: var(--mods-accent-fg); border-color: transparent; }
+.mods-pill.on { background: color-mix(in srgb, var(--mods-accent) 28%, transparent); color: var(--mods-fg); border-color: var(--mods-accent); }
 .mods-pill.ghost { cursor: default; opacity: .55; }
 .mods-pill.ghost.on { opacity: 1; }
 .mods-link { background: none; border: 0; color: var(--mods-accent); cursor: pointer; padding: 0; font: inherit; }
 .mods-link:hover { text-decoration: underline; }
 .mods-field { display: grid; grid-template-columns: 170px 1fr minmax(90px, auto); align-items: center; gap: 10px; margin: 6px 0; }
-.mods-range { width: 100%; accent-color: var(--mods-accent); }
+.mods-range { width: 100%; min-width: 0; accent-color: var(--mods-accent); margin: 0; }
 .mods-num { display: flex; align-items: baseline; gap: 4px; justify-content: flex-end; }
 .mods-num input { width: 54px; background: var(--mods-field-bg); color: inherit; border: 1px solid var(--mods-field-line); border-radius: 4px; padding: 2px 4px; text-align: right; font: inherit; }
 .mods-num em { font-style: normal; opacity: .7; min-width: 18px; }
+.mods-help { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 6px; border-radius: 50%;
+  border: 1px solid currentColor; font-size: 10px; font-style: normal; line-height: 1; opacity: .5; cursor: help; vertical-align: 1px; }
+.mods-help:hover { opacity: .9; }
 .mods-adv { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--mods-line); }
 .mods-meters { margin: 12px 0 4px; }
 .mods-meter { display: grid; grid-template-columns: 120px 1fr 80px; align-items: center; gap: 10px; margin: 4px 0; font-size: 12px; }
@@ -42,3 +48,81 @@
 .mods-modal { padding: 24px; color: var(--mods-fg); }
 .mods-modal p { text-align: start; }   /* the client centres every <p> inside its modal overlay; mod dialogs are left aligned */
 @media (max-width: 700px) { .mods-field { grid-template-columns: 1fr; } }
+
+/* ---------- Mods page: header, search, overview cards ---------- */
+.mods-page { display: flex; flex-direction: column; gap: 16px; }
+.mods-head { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; }
+.mods-head .mods-title { margin: 0; font-size: 20px; }
+.mods-count { font-size: 12px; color: var(--mods-muted); }
+.mods-search { display: flex; align-items: center; gap: 8px; margin-left: auto; width: 250px; max-width: 100%; height: 32px; padding: 0 12px; box-sizing: border-box;
+  background: var(--mods-field-bg); border: 1px solid var(--mods-field-line); border-radius: 16px; color: var(--mods-muted); }
+.mods-search:focus-within { border-color: var(--mods-accent); }
+.mods-search svg { flex: none; }
+.mods-search-in { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: var(--mods-fg); font: inherit; font-size: 13px; }
+.mods-search-in::-webkit-search-cancel-button { filter: grayscale(1); opacity: .6; cursor: pointer; }
+.mods-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); gap: 14px; }
+.mods-tile { display: flex; flex-direction: column; gap: 10px; box-sizing: border-box; padding: 16px; border-radius: 10px; background: var(--mods-surface); min-width: 0; }
+.mods-tile.on { background: var(--mods-surface-on); }
+.mods-tile-top { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.mods-ic { width: 36px; height: 36px; border-radius: 8px; background: var(--mods-surface-2); display: flex; align-items: center; justify-content: center; flex: none; color: var(--mods-fg); }
+.mods-ic.big { width: 40px; height: 40px; border-radius: 9px; }
+.mods-tile-name { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--mods-fg); font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mods-tile-name:hover { text-decoration: underline; }
+.mods-switch { flex: none; }
+.mods-tile-desc { flex: 1; margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--mods-muted);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.mods-tile-foot { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--mods-muted); min-width: 0; }
+.mods-tile-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mods-tile.on .mods-tile-status { color: var(--mods-fg); opacity: .85; }
+.mods-tile-status.mods-hit { color: var(--mods-accent); opacity: 1; }
+.mods-tile-open { font-size: 12px; flex: none; }
+.mods-empty { margin: 0; }
+
+/* ---------- one mod's page ---------- */
+.mods-detail { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.mods-back { align-self: flex-start; font-size: 13px; }
+.mods-detail-head { display: flex; align-items: flex-start; gap: 14px; }
+.mods-detail-text { flex: 1; min-width: 0; }
+.mods-detail-title { margin: 0; font-size: 17px; font-weight: 600; }
+.mods-detail-desc { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--mods-muted); }
+.mods-detail-head .mods-switch { margin-top: 8px; }
+.mods-detail > .mods-error, .mods-offnote { margin: 0; }
+.mods-boxes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr)); gap: 12px; align-items: start; min-width: 0; }
+.mods-secs { display: contents; }
+.mods-boxes > .mods-tabs, .mods-boxes > .mods-foot, .mods-boxes > .mods-wide, .mods-boxes > .mods-note, .mods-boxes > .mods-error,
+.mods-boxes > .mods-status, .mods-boxes > .mods-absent, .mods-boxes > .mods-box.mods-span { grid-column: 1 / -1; }
+.mods-boxes > .mods-note, .mods-boxes > .mods-status, .mods-boxes > .mods-absent, .mods-boxes > .mods-error { margin: 0; }
+.mods-box { min-width: 0; box-sizing: border-box; padding: 12px 16px; border-radius: 8px; background: var(--mods-surface); }
+/* an untitled box whose content is all hidden takes no room */
+.mods-box:not(:has(> :not([hidden]))) { display: none; }
+.mods-box > .mods-subtitle:first-child { margin: 0 0 6px; font-size: 13px; opacity: 1; }
+.mods-box .mods-section { margin-top: 4px; }
+.mods-box > :last-child { margin-bottom: 0; }
+/* compact rows inside a box: label | slider | value box with unit */
+.mods-box .mods-field { grid-template-columns: minmax(90px, 36%) minmax(50px, 1fr) 92px; gap: 10px; margin: 8px 0; font-size: 12.5px; }
+.mods-box .mods-field > label { overflow-wrap: anywhere; }
+.mods-box .mods-num { align-items: center; gap: 2px; padding: 0 6px 0 0; border: 1px solid var(--mods-field-line); border-radius: 4px; background: var(--mods-field-bg); }
+.mods-box .mods-num input { flex: 1; min-width: 0; width: 40px; border: 0; background: transparent; padding: 3px 2px 3px 6px; font-size: 12px; -moz-appearance: textfield; }
+.mods-box .mods-num input::-webkit-inner-spin-button { display: none; }
+.mods-box .mods-num em { min-width: 0; font-size: 12px; white-space: nowrap; }
+.mods-box .mods-label { min-width: 0; margin-right: 4px; }
+.mods-box .mods-meter { grid-template-columns: minmax(80px, 34%) 1fr 70px; }
+.mods-box .mods-row { margin: 6px 0; }
+
+.mods-tabs { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.mods-tabbar { display: flex; align-items: flex-end; gap: 4px 22px; flex-wrap: wrap; border-bottom: 1px solid var(--mods-soft-line); }
+.mods-tab { height: 34px; padding: 0 4px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--mods-muted); font: inherit; font-size: 13px; cursor: pointer; }
+.mods-tab:hover { color: var(--mods-fg); }
+.mods-tab.on { color: var(--mods-fg); border-bottom-color: var(--mods-accent); }
+.mods-tabaside { margin-left: auto; padding-bottom: 8px; font-size: 11.5px; color: var(--mods-muted); text-align: right; }
+.mods-foot { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; font-size: 12px; color: var(--mods-muted); }
+.mods-foot > .mods-link { font-size: 12px; }
+.mods-foot > .mods-link:first-of-type { margin-left: auto; }
+.mods-box .mods-status { margin: 8px 0 0; font-size: 12px; color: var(--mods-muted); }
+.mods-box .mods-pill { padding: 4px 13px; font-size: 12.5px; }
+.mods-box .mods-trow { margin: 4px 0 10px; font-size: 13.5px; }
+.mods-box .mods-trow:last-child, .mods-box > :last-child > .mods-trow:nth-last-child(1 of :not([hidden])) { margin-bottom: 2px; }
+.mods-box .mods-meter-track { background: var(--mods-surface-2); }
+.mods-box { font-size: 13px; }
+.mods-box .mods-row > .mods-label:first-child { flex-basis: 100%; margin: 0; opacity: .85; }

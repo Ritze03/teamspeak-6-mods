@@ -66,7 +66,7 @@ export default async function (ctx) {
       const same = `JSON.stringify(__thApi.theme.treeHeights()) === JSON.stringify(${want})`;
       const overlap = `__thApi.theme.rowsOverlap()`;
       const sw = async (id) => {
-        await ctx.openModsPage();
+        await ctx.openModsPage('theme');
         await ctx.waitFor(`!!document.querySelector('select.theme-mod-select')`, 'picker on the Mods page', 5000);
         ctx.assert(await ctx.eval(`(()=>{ const f = [...document.querySelectorAll('.mods-field')].find(e => /Poll interval/.test(e.textContent)); return !!f && getComputedStyle(f).display === 'none'; })()`), 'poll slider is not displayed while live reload is off');
         await ctx.eval(`(()=>{ const s = document.querySelector('select.theme-mod-select'); s.value = ${JSON.stringify(id || '')}; s.dispatchEvent(new Event('change')); })()`);
@@ -83,7 +83,7 @@ export default async function (ctx) {
     /* ---- one-shot reload (the button): swaps the CSS in and re-measures the tree ---- */
     edit(40, 'one');
     const graphiteRow = await ctx.eval(rowH);
-    await ctx.openModsPage();
+    await ctx.openModsPage('theme');
     await ctx.waitFor(`[...document.querySelectorAll('button')].some(b => /Reload theme now/.test(b.textContent))`, 'Reload button on the Mods page', 5000);
     await ctx.eval(`[...document.querySelectorAll('button')].find(b => /Reload theme now/.test(b.textContent)).click()`);
     await ctx.waitFor(`__thApi.theme.state().liveStyles === 1`, 'the Reload button swaps the CSS in', 5000);
@@ -126,7 +126,7 @@ export default async function (ctx) {
     await ctx.waitFor(`${rowH} === ${defaultRow}`, 'default row height is back (' + defaultRow + ')', 6000);
 
     /* ---- the controls are on the Mods page ---- */
-    await ctx.openModsPage();
+    await ctx.openModsPage('theme');
     await ctx.waitFor(`!!document.querySelector('select.theme-mod-select')`, 'theme picker is on the Mods page', 5000);
     ctx.assert(await ctx.eval(`[...document.querySelectorAll('button')].some(b => /Reload theme now/.test(b.textContent))`), 'Reload button present');
     await ctx.restoreRoute();

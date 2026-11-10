@@ -226,7 +226,7 @@ export const tests = [
         api.settings.addPage({ key: 'p', title: 'T page', icon: 'settings-addons', render(host) { host.textContent = 'page body'; } }); } }`));
     await c.enable('t-set');
     c.assert((await c.eval(`__ts6mod.anchors.settings.keys()`)).includes('TS6Mods.t-set.p'), 'addPage adds a Settings category');
-    await c.openModsPage();
+    await c.openModsPage('t-set');
     await c.waitFor(`!!document.querySelector('[data-ts6mod="t-set"]') && /own area/.test(document.querySelector('[data-ts6mod="t-set"]').textContent) && /section body/.test(document.querySelector('[data-ts6mod="t-set"]').textContent)`, 'own area and section rendered on the Mods page');
     await c.sleep(100);
     c.assert(await c.eval(`window.__tick > 2`), 'timers started in settings() run while the page is shown');
@@ -260,10 +260,86 @@ export const tests = [
 
   ['core: Mods page lists mods with their switch state', async c => {
     await c.openModsPage();
-    await c.waitFor(`document.querySelectorAll('.mods-mod').length >= 2`, 'Mods page lists the registered mods');
-    const n = await c.eval(`document.querySelectorAll('.mods-mod').length`), m = await c.eval(`__ts6mod.list().length`);
+    await c.waitFor(`document.querySelectorAll('[data-mod-card]').length >= 2`, 'Mods page lists the registered mods');
+    const n = await c.eval(`document.querySelectorAll('[data-mod-card]').length`), m = await c.eval(`__ts6mod.list().length`);
     c.equal(n, m, 'one card per registered mod');
+    c.equal(await c.eval(`[...document.querySelectorAll('[data-mod-card]')].map(e => e.querySelector('.mods-switch').classList.contains('checked'))`),
+      await c.eval(`[...document.querySelectorAll('[data-mod-card]')].map(e => __ts6mod.isEnabled(e.dataset.modCard))`), 'each card switch shows its mod state');
     await c.eval(`__ts6mod.goto('/')`);
+  }],
+
+  ['core: Mods page (card switch, mod page and back, tabs, off note, search, audio tabs)', async c => {
+    const Q = s => JSON.stringify(s), shown = sel => `(n => !!n && !n.closest('[hidden]') && n.getClientRects().length > 0)(document.querySelector(${Q(sel)}))`;
+    const click = sel => c.eval(`(() => { const n = document.querySelector(${Q(sel)}); if (!n) throw new Error('missing ' + ${Q(sel)}); n.click(); return 1; })()`);
+    await c.eval(reg('t-page', `{ enable() {}, group: 'Tools', icon: 'M4 4h16v16H4z', summary: 'Throw-away page test mod', keywords: ['Zebra knob'], status: () => 'ok-status',
+      settings(api, box) {
+        box.append(api.ui.section('Plain box', api.ui.note('plain')));
+        const t = api.ui.tabs([{ name: 'One', render: p => p.append(api.ui.section('Box one', api.ui.slider({ label: 'Alpha', min: 0, max: 10, step: 1, value: 3 }).el)) },
+          { name: 'Two', content: api.ui.section('Box two', api.ui.toggle({ title: 'Beta' }).el) }], { aside: 'aside text' });
+        box.append(t.el, api.ui.footer('foot'));
+      } }`));
+    const CARD = '[data-mod-card="t-page"]', PAGE = '[data-mod-page="t-page"]';
+    await c.openModsPage();
+    await c.waitFor(`!!document.querySelector(${Q(CARD)})`, 'card of the test mod');
+    c.equal(await c.eval(`document.querySelector(${Q(CARD + ' .mods-tile-status')}).textContent`), 'Off', 'status line of an off mod');
+    c.equal(await c.eval(`document.querySelector(${Q(CARD + ' .mods-tile-desc')}).textContent`), 'Throw-away page test mod', 'card shows the summary');
+    // the card switch toggles the mod without opening it
+    await click(CARD + ' .mods-switch');
+    await c.waitFor(`__ts6mod.isEnabled('t-page')`, 'card switch enables the mod');
+    c.equal(await c.eval(`__ts6mod.page.view()`), 'grid', 'still on the overview');
+    await c.waitFor(`document.querySelector(${Q(CARD + ' .mods-tile-status')}).textContent === 'On · ok-status' && document.querySelector(${Q(CARD)}).classList.contains('on')`, 'status() hook on the card, card tinted');
+    c.equal(await c.eval(`document.querySelectorAll('[data-ts6mod="t-page"]').length`), 0, 'no settings DOM on the overview');
+    // open the mod page from the card name
+    await click(CARD + ' .mods-tile-name');
+    await c.waitFor(`__ts6mod.page.view() === 'mod' && ${shown(PAGE)}`, 'mod page replaces the overview');
+    c.assert(!(await c.eval(shown(CARD))), 'cards hidden while a mod page is shown');
+    c.assert(await c.eval(`${shown(PAGE + ' .mods-box')} && /Plain box/.test(document.querySelector(${Q(PAGE)}).textContent)`), 'sections render as boxes');
+    c.equal(await c.eval(`[...document.querySelectorAll(${Q(PAGE + ' .mods-tab')})].map(b => b.textContent)`), ['One', 'Two'], 'tab bar');
+    c.equal(await c.eval(`document.querySelector(${Q(PAGE + ' .mods-tabaside')}).textContent`), 'aside text', 'tab bar aside');
+    c.assert(await c.eval(`${shown(PAGE + ' .mods-tabpanel[data-tab="One"]')} && !${shown(PAGE + ' .mods-tabpanel[data-tab="Two"]')}`), 'first tab shown, second hidden');
+    await click(PAGE + ' .mods-tab[data-tab="Two"]');
+    c.assert(await c.eval(`!${shown(PAGE + ' .mods-tabpanel[data-tab="One"]')} && ${shown(PAGE + ' .mods-tabpanel[data-tab="Two"]')}`), 'switching the tab swaps the boxes');
+    // back to the overview: the settings scope is gone
+    await click(PAGE + ' .mods-back');
+    await c.waitFor(`__ts6mod.page.view() === 'grid' && ${shown(CARD)} && !document.querySelector(${Q(PAGE)})`, 'back link returns to the overview');
+    c.equal(await c.eval(`document.querySelectorAll('[data-ts6mod="t-page"]').length`), 0, 'settings DOM removed when leaving the mod page');
+    // the tab is remembered; the page switch turns the mod off and shows the off note
+    await c.openModsPage('t-page');
+    c.equal(await c.eval(`__ts6mod.page.tab()`), 'Two', 'last tab remembered');
+    await click(PAGE + ' .mods-switch');
+    await c.waitFor(`!__ts6mod.isEnabled('t-page') && ${shown(PAGE + ' .mods-offnote')} && !document.querySelector('[data-ts6mod="t-page"]')`, 'off: note shown, settings removed');
+    await click(PAGE + ' .mods-switch');
+    await c.waitFor(`__ts6mod.isEnabled('t-page') && !!document.querySelector('[data-ts6mod="t-page"] .mods-tabs')`, 'on again: settings back');
+    // leaving and returning to the Mods category shows the overview
+    await c.eval(`__ts6mod.goto('/')`); await c.openModsPage();
+    // search: by keyword, by another mod's title, no match
+    const other = await c.eval(`__ts6mod.list().find(m => m.id !== 't-page').title`);
+    await c.eval(`__ts6mod.page.search('zebra')`);
+    c.equal(await c.eval(`[...document.querySelectorAll('[data-mod-card]')].filter(e => !e.hidden).map(e => e.dataset.modCard)`), ['t-page'], 'search finds a mod by a setting keyword');
+    c.assert(/Zebra knob/.test(await c.eval(`document.querySelector(${Q(CARD + ' .mods-tile-status')}).textContent`)), 'the matching setting is named on the card');
+    await c.eval(`__ts6mod.page.search('alpha')`);
+    c.assert(await c.eval(`!document.querySelector(${Q(CARD)}).hidden`), 'search finds a label seen on the mod page (harvested)');
+    await c.eval(`__ts6mod.page.search(${Q(other)})`);
+    c.assert(await c.eval(`document.querySelector(${Q(CARD)}).hidden && [...document.querySelectorAll('[data-mod-card]')].some(e => !e.hidden)`), 'search by another mod title hides the test card');
+    await c.eval(`__ts6mod.page.search('qqq-no-such-setting')`);
+    c.assert(await c.eval(`[...document.querySelectorAll('[data-mod-card]')].every(e => e.hidden) && ${shown('.mods-empty')}`), 'no match: every card hidden, a note says so');
+    await c.eval(`__ts6mod.page.search('')`);
+    c.equal(await c.eval(`[...document.querySelectorAll('[data-mod-card]')].filter(e => e.hidden).length`), 0, 'clearing the search shows every card');
+    await c.eval(`__ts6mod.goto('/')`);
+    await c.eval(`__ts6mod.unregister('t-page', { purge: true })`);
+    // the audio mod: four tabs, switching swaps the boxes
+    if (await c.eval(`__ts6mod.mods().has('audio')`)) {
+      const was = await c.eval(`__ts6mod.isEnabled('audio')`);
+      if (!was) await c.enable('audio');
+      await c.openModsPage('audio', 'Parameters');
+      const A = '[data-mod-page="audio"]';
+      c.equal(await c.eval(`[...document.querySelectorAll(${Q(A + ' .mods-tab')})].map(b => b.textContent)`), ['Processing', 'Presets', 'Parameters', 'Per-user'], 'audio has four tabs');
+      c.assert(await c.eval(`${shown(A + ' .mods-tabpanel[data-tab="Parameters"]')} && !${shown(A + ' .mods-tabpanel[data-tab="Presets"]')}`), 'Parameters tab shown');
+      await click(A + ' .mods-tab[data-tab="Presets"]');
+      c.assert(await c.eval(`!${shown(A + ' .mods-tabpanel[data-tab="Parameters"]')} && ${shown(A + ' .mods-tabpanel[data-tab="Presets"]')}`), 'Presets tab swaps the boxes');
+      await c.eval(`__ts6mod.goto('/')`);
+      if (!was) await c.disable('audio');
+    }
   }],
 
   // last: it replaces the core in the page (what tools/cdp/mods-reload.mjs does), twice in a row, the second time while the first new

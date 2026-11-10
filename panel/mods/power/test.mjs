@@ -116,7 +116,7 @@ export default async function (ctx) {
     }
 
     /* ---------- 3. settings: developer toggles, only explicit clicks change them ---------- */
-    await ctx.openModsPage();
+    await ctx.openModsPage('power');
     await ctx.waitFor(`document.querySelectorAll('${B} label').length > 0 && /Hidden developer toggles/.test(document.querySelector('${B}').textContent)`, 'settings area with the developer section');
     const flags = await ctx.eval(`${P}.devFlags()`);
     ctx.assert(flags.length >= 5, 'developer flags are listed (' + flags.length + ')');

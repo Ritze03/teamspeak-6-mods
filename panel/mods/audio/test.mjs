@@ -41,7 +41,7 @@ export default async function (ctx) {
     await ctx.enable('audio');
     if (nativeUp) await nat('/config', { enabled: false });   // keep the master off while editing (no per-speaker hook install on a real client)
     ctx.equal(await ctx.eval(`document.querySelectorAll('${BODY}').length`), 0, 'no settings DOM until the Mods page is open');
-    await ctx.openModsPage();
+    await ctx.openModsPage('audio', 'Parameters');
     await ctx.waitFor(`document.querySelectorAll('${BODY}').length === 1`, 'audio area on the Mods page');
     ctx.assert(await ctx.eval(`/Automatic Gain Control/.test(document.querySelector('${BODY}').textContent)`), 'stock AGC toggle is listed');
 
@@ -52,6 +52,7 @@ export default async function (ctx) {
 
       // master switch (whole mode: the hook is not involved), through the real toggle
       await nat('/config', { mode: 'whole' });
+      await ctx.openModsPage('audio', 'Processing');
       await ctx.waitFor(`document.querySelector('${BODY}') && /Whole stream/.test(document.querySelector('${BODY}').textContent)`, 'page up');
       await clickText(BODY, 'Audio processing (AGC)');
       await ctx.sleep(500);
@@ -63,9 +64,12 @@ export default async function (ctx) {
       // mode
       await clickText(BODY, 'Per speaker'); await ctx.sleep(500);
       ctx.equal((await nat('/config')).mode, 'per_speaker', 'mode per speaker set');
+      await ctx.openModsPage('audio', 'Parameters');
       await ctx.waitFor(`document.querySelector('${BODY} .aud-speakers').closest('[hidden]') === null`, 'speaker list shown in per-speaker mode');
+      await ctx.openModsPage('audio', 'Processing');
       await clickText(BODY, 'Whole stream'); await ctx.sleep(500);
       ctx.equal((await nat('/config')).mode, 'whole', 'mode whole set');
+      await ctx.openModsPage('audio', 'Parameters');
 
       // every parameter through its number field
       const defs = await ctx.eval(`[...document.querySelectorAll('${BODY} .aud-param')].map(p => { const r = p.querySelector('input[type=range]'); return { key: p.dataset.key, min: +r.min, max: +r.max, step: +r.step }; })`);
@@ -81,6 +85,7 @@ export default async function (ctx) {
       }
 
       // built-in presets: values and "modified"
+      await ctx.openModsPage('audio', 'Presets');
       const modified = () => ctx.eval(`!document.querySelector('${BODY} .aud-modified').hidden`);
       for (const key of ['voice', 'music', 'quiet']) {
         await click(`${BODY} [data-preset="${key}"]`); await ctx.sleep(500);
@@ -139,7 +144,7 @@ export default async function (ctx) {
         ctx.equal((await nat('/config')).enabled, true, `back-to-back off/on #${i + 1}: native enabled equals the stored master switch`);
       }
       await nat('/config', { enabled: false });
-      await ctx.openModsPage();
+      await ctx.openModsPage('audio');
       await ctx.waitFor(`document.querySelectorAll('${BODY}').length === 1`, 'audio area back after the toggles');
     }
 
@@ -172,7 +177,7 @@ export default async function (ctx) {
         } else ctx.log('peer row not rendered in the channel tree: popover opened from the page list (context-menu item not exercised)');
         {
           if (how === 'list') {
-            await ctx.openModsPage();
+            await ctx.openModsPage('audio', 'Per-user');
             await ctx.waitFor(`!!document.querySelector('${BODY} .aud-user[data-uid="${peer.uid}"] [data-act="user-edit"]:not([hidden])')`, 'user listed on the page');
             await click(`${BODY} .aud-user[data-uid="${peer.uid}"] [data-act="user-edit"]`);
           }
@@ -202,7 +207,7 @@ export default async function (ctx) {
           ctx.assert(await ctx.eval(`__ts6mod.mods().get('audio').api.peers.list().find(p => p.id === ${peer.id}).muted`), 'mute re-applied from the record');
           // reset everything for the user: record gone, native override cleared, mute lifted
           await ctx.eval(`window.__audPosts.length = 0`);
-          await ctx.openModsPage();
+          await ctx.openModsPage('audio', 'Per-user');
           await ctx.waitFor(`!!document.querySelector('${BODY} .aud-user[data-uid="${peer.uid}"] [data-act="user-edit"]:not([hidden])')`, 'saved user listed on the page');
           await click(`${BODY} .aud-user[data-uid="${peer.uid}"] [data-act="user-edit"]`);
           await ctx.waitFor(`!!document.querySelector('${POP}')`, 'popover opens from the saved-user list');
