@@ -21,3 +21,8 @@
 .net-k { color: var(--mods-muted); }
 .net-val { text-align: right; font-variant-numeric: tabular-nums; }
 .net-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* bottom bar: sits in the client's connection-status group, so it takes the bar's own text colour and the 13 px of its button labels */
+/* position: relative like the stock items, so it paints above the group's rounded ::before background */
+.net-hud.net-bottom { position: relative; color: inherit; font-size: 13px; margin: 0 6px 0 -4px; padding: 2px 5px; height: 22px; align-self: center; }
+/* the stock connection-status bars sit right next to it, so the own signal glyph is dropped there (room for ping + loss at the minimum pane width) */
+.net-hud.net-bottom > .net-glyph { display: none; }

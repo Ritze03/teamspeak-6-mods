@@ -8,6 +8,7 @@ export default async function (ctx) {
   const cfg = o => ctx.eval(`__ts6mod.store().settings.layout = ${JSON.stringify(Object.assign({ chatTabs: false, serverTabs: false, density: 100, hide: {} }, o))}; 1`);
   const orig = await ctx.eval(`JSON.stringify(__ts6mod.store().settings.layout ?? null)`);   // restored at the end (settings are read from memory on enable)
   const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+  let paneRestore = null;   // tree pane slot size to put back if the Create Channel part stops halfway
   try {
     await ctx.disable('layout');
     await ctx.eval(`${DEV}.showServer()`);
@@ -79,7 +80,7 @@ export default async function (ctx) {
     await ctx.openModsPage('layout');
     await ctx.waitFor(`document.querySelector('[data-ts6mod="layout"] input[type=range]')`, 'density slider on the Mods page');
     const toggles = await ctx.eval(`document.querySelectorAll('[data-ts6mod="layout"] input[type=checkbox]').length`);
-    ctx.assert(toggles >= 12, `settings show the tab, server-tab and hide switches (${toggles})`);
+    ctx.assert(toggles >= 11, `settings show the tab, server-tab and hide switches (${toggles})`);
     await ctx.eval(`(() => { const r = document.querySelector('[data-ts6mod="layout"] input[type=range]'); r.value = 130; r.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     await ctx.restoreRoute();
     await ctx.eval(`${DEV}.showServer()`);
@@ -89,8 +90,52 @@ export default async function (ctx) {
     await ctx.restoreRoute();
     await ctx.disable('layout');
 
+    /* ---- Create Channel button style: vanilla (stock + round collapse), compact (circle), hidden; narrow pane; migration; off ---- */
+    await ctx.eval(`${DEV}.showServer()`);
+    await ctx.waitFor(`${DEV}.cc().btn`, 'Create Channel button on screen');
+    const cc = () => ctx.eval(`${DEV}.cc()`);
+    const wide = await ctx.eval(`${DEV}.paneWidth()`);
+    const was = await ctx.eval(`${DEV}.paneWidth(Math.max(${wide}, 520))`);   // wide enough for the label (restored in finally)
+    paneRestore = was;
+    await ctx.waitFor(`${DEV}.cc().collapsed === false`, 'wide pane: stock button shows its label');
+    const stock = await cc();
+    const circle = c => c.btn && Math.abs(c.btn.w - c.btn.h) <= 1 && c.btn.w >= 24;
+    const cfgCc = async (o, msg) => { await ctx.disable('layout'); await cfg(o); await ctx.enable('layout'); await ctx.sleep(400); ctx.log(msg); };
+    await cfgCc({ ccStyle: 'vanilla' }, 'style vanilla');
+    let c = await cc();
+    ctx.equal(c.label && Math.abs(c.btn.w - stock.btn.w) < 1 && c.radius === stock.radius, true, `vanilla, wide: the expanded pill is untouched (${c.btn.w}x${c.btn.h}, ${c.radius})`);
+    ctx.equal(c.title, 'Create Channel', 'tooltip/aria-label "Create Channel" set while the mod is on');
+    await ctx.eval(`${DEV}.paneWidth(200)`);   // the client clamps to the slot minimum
+    await ctx.waitFor(`${DEV}.cc().collapsed === true`, 'narrow pane: the stock auto-collapse folds the label away');
+    await ctx.sleep(300); c = await cc();
+    ctx.assert(circle(c) && !c.label, `vanilla, narrow: the collapsed button is a circle (${c.btn.w}x${c.btn.h})`);
+    ctx.assert(!c.right || c.right.r <= c.bar.r + 1, `narrow: the right group stays inside the bar (${c.right && c.right.r} <= ${c.bar.r})`);
+    await ctx.eval(`${DEV}.paneWidth(${Math.max(wide, 520)})`);
+    await ctx.waitFor(`${DEV}.cc().collapsed === false`, 'wide again');
+    await cfgCc({ ccStyle: 'compact' }, 'style compact');
+    c = await cc();
+    ctx.assert(circle(c) && !c.label && c.title === 'Create Channel', `compact, wide: circle without label, tooltip kept (${c.btn.w}x${c.btn.h})`);
+    await cfgCc({ ccStyle: 'hidden' }, 'style hidden');
+    c = await cc();
+    ctx.equal(c.shown, false, 'hidden: the button is not displayed');
+    await cfgCc({ hide: { createChannel: true } }, 'old hide switch, no style');
+    ctx.equal((await cc()).shown, false, 'migration: an old "createChannel" hide switch counts as Hidden');
+    await ctx.disable('layout');
+    c = await cc();
+    ctx.equal(c.shown && c.label && c.title === null && Math.abs(c.btn.w - stock.btn.w) < 1, true, 'off: stock button back (label, no added title)');
+    await ctx.assertClean('layout');
+    await ctx.eval(`${DEV}.paneWidth(${was})`); paneRestore = null;
+    /* settings page: three style pills */
+    await cfg({});
+    await ctx.enable('layout');
+    await ctx.openModsPage('layout');
+    await ctx.waitFor(`document.querySelectorAll('[data-ts6mod="layout"] [data-lay="cc"] [data-cc]').length === 3`, 'Create Channel style pills on the Layout page');
+    ctx.equal(await ctx.eval(`document.querySelector('[data-ts6mod="layout"] [data-cc].on').dataset.cc`), 'vanilla', 'Vanilla is the default');
+    await ctx.restoreRoute();
+    await ctx.disable('layout');
+
     /* ---- hide switches ---- */
-    const keysServer = ['announce', 'hostBanner', 'transfer', 'createChannel', 'afk', 'join', 'bookmarks'], keysDash = ['dashStart', 'dashPopular', 'dashChats'];
+    const keysServer = ['announce', 'hostBanner', 'transfer', 'afk', 'join', 'bookmarks'], keysDash = ['dashStart', 'dashPopular', 'dashChats'];
     const hide = Object.fromEntries([...keysServer, ...keysDash].map(k => [k, true]));
     // base = what the client (or the user's theme) already hides while the mod is off: "visible" means back to that, not "all shown"
     let off0 = null;
@@ -118,6 +163,7 @@ export default async function (ctx) {
     }
     await ctx.assertClean('layout');
   } finally {
+    if (paneRestore != null) await ctx.eval(`${DEV}.paneWidth(${paneRestore})`).catch(() => {});
     await ctx.disable('layout').catch(() => {});
     await ctx.eval(`(() => { const s = __ts6mod.store().settings, o = ${JSON.stringify(orig)}; if (o === 'null') delete s.layout; else s.layout = JSON.parse(o); })()`).catch(() => {});
     await ctx.restoreRoute().catch(() => {});

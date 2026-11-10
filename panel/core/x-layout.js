@@ -4,6 +4,7 @@
  *   api.layout.sidebar    collapse the left column to its icon column and put it back
  *   api.layout.density    scale the channel tree row heights live (CSS vars + the tree component's cached heights)
  *   api.layout.declutter  CSS that hides individual UI parts
+ *   api.layout.createChannel  style of the Create Channel button at the bottom of the channel tree (round collapse / compact / hidden)
  * Docs: superdoc/features/mod-layout.md. */
 (function (boot) {
   'use strict';
@@ -16,6 +17,12 @@
   A.def('layout.window', 'window vm above the sidebar: collapsedSidebar + windowLayout.setSlotCollapsed(0, bool)', () => winVm());
   A.def('layout.titleBar', 'title bar of the content area: .tsv-window-bar holding the central toolbar and the window buttons', () => $('.tsv-window-bar'), true);
   const treeVms = () => $$('.ts-server-tree-scroller').map(s => s.__vue__ && s.__vue__.$parent).filter(v => v && typeof v.flattenServer === 'function' && 'clientHeightDetailed' in v);
+  /* bottom bar of the server pane: the server-status-bar component sets isSmall = bar width < (label copy + right group) and then
+     renders the visible button group without its title; a hidden copy (.ts-hidden) always carries the title and is what it measures */
+  const statusBars = () => $$('.ts-server-status-bar').filter(e => e.__vue__ && 'isSmall' in e.__vue__);
+  A.def('layout.statusBar', 'server pane bottom bar (.ts-server-status-bar, vm isSmall) with the Create Channel group .ts-server-status-constructive-buttons', () => statusBars()[0], true);
+  const CC_BTN = '.ts-server-status-bar > .ts-server-status-constructive-buttons:not(.ts-hidden) > .tsv-tool-button';
+  A.def('layout.createChannel', 'visible Create Channel button (.tsv-tool-button in the non-.ts-hidden constructive group); label .tsv-tool-button-title', () => $(CC_BTN), true);
   A.def('layout.tree', 'channel tree component(s): cached row heights (clientHeightCompact/Detailed, channelHeightDefault, spacerHeightDefault) + flattenServer()', () => treeVms()[0], true);
 
   /* ---------- hide rules (declutter) ---------- */
@@ -23,7 +30,6 @@
     announce:   { label: 'Announcement bar', group: 'Server view', help: 'The bar above the channel tree (for example "Is this your TeamSpeak server?").', css: '.ts-notification:has(.ts-notification-widget-announcement) { display: none !important; }\n.ts-notifications-overlay:has(.ts-notification-widget-announcement):not(:has(.ts-notification:not(:has(.ts-notification-widget-announcement)))) { display: none !important; }' },
     hostBanner: { label: 'Server banner on the info page', group: 'Server view', help: 'The (often empty) banner card at the top of the server info page.', css: '.tsv-server-host-banner { display: none !important; }' },
     transfer:   { label: 'File transfer info', group: 'Server view', help: 'The "File Transfer Info" card on the server info page.', css: '.ts-transfer-quota-outer { display: none !important; }' },
-    createChannel: { label: 'Create Channel button', group: 'Server view', help: 'The Create Channel button at the bottom of the channel tree.', css: '.ts-server-status-constructive-buttons { display: none !important; }' },
     afk:        { label: 'AFK button', group: 'Toolbar', help: 'The away button next to the microphone and speaker buttons.', css: '.tsv-central-toolbar > .tsv-tool-buttons:not(.tsv-central-toolbar-buttons) { display: none !important; }' },
     join:       { label: '"Create a TeamSpeak Community" button', group: 'Sidebar', help: 'The big button below the server list in the left column.', css: '.ts-join-community { display: none !important; }' },
     bookmarks:  { label: 'Bookmarks section', group: 'Sidebar', help: 'The Bookmarks block in the left column.', css: '.resources-section .tsv-resources-group:has(.ts-bookmarks-root) { display: none !important; }' },
@@ -32,6 +38,16 @@
     dashChats:  { label: 'Dashboard: Chats', group: 'Dashboard', help: 'The "Join / Start a Group Chat" block.', css: '.tsv-dashboard-chats { display: none !important; }' },
   };
   const selOf = k => HIDE[k].css.split(' {')[0];
+
+  /* Create Channel button styles. vanilla = only the stock collapsed state (no title child) becomes a 30 px circle; compact = the
+     title is always hidden and the button is that circle; hidden = the whole group (and its measuring copy) is gone. */
+  const CC_CIRCLE = 'width: 30px !important; height: 30px !important; min-width: 30px; padding: 0 !important; box-sizing: border-box; justify-content: center; align-items: center; border-radius: 50% !important;';
+  const CC_CSS = {
+    vanilla: CC_BTN + ':not(:has(.tsv-tool-button-title)) { ' + CC_CIRCLE + ' }',
+    compact: CC_BTN + ' { ' + CC_CIRCLE + ' }\n' + CC_BTN + ' > .tsv-tool-button-title { display: none !important; }',
+    hidden: '.ts-server-status-constructive-buttons { display: none !important; }',
+  };
+  const ccLabel = () => { const t = $('.ts-server-status-constructive-buttons.ts-hidden .tsv-tool-button-title'); return (t && t.textContent.trim()) || 'Create Channel'; };
 
   /* ---------- helpers ---------- */
   const flat = x => (Array.isArray(x) ? x.flatMap(flat) : [x]);
@@ -92,7 +108,23 @@
       pushHeightsToTrees();
     }
 
+    let ccUndo = null;
+    const ccMarked = new Set();
+    function ccLabelSet() {   // tooltip + accessible name on the visible button(s); the stock button has neither
+      const name = ccLabel();
+      for (const b of $$(CC_BTN)) if (b.getAttribute('title') !== name) { b.setAttribute('title', name); b.setAttribute('aria-label', name); ccMarked.add(b); }
+      if (!ccUndo) ccUndo = track('layout-cc-label', () => { for (const b of ccMarked) { b.removeAttribute('title'); b.removeAttribute('aria-label'); } ccMarked.clear(); ccUndo = null; });
+    }
+
     return {
+      createChannel: {
+        styles: ['vanilla', 'compact', 'hidden'],
+        /* css text for a style; vanilla = stock behaviour with the auto-collapsed state drawn as a circle */
+        css: style => CC_CSS[style] || CC_CSS.vanilla,
+        /* put the localized label as title/aria-label on the visible button (call again after DOM changes); clear() removes it */
+        label: ccLabelSet,
+        clear: () => { if (ccUndo) ccUndo(); },
+      },
       chats: {
         available: () => !!actsVm(),
         list: snapshot,
@@ -175,6 +207,22 @@
       const o = {};
       for (const k of Object.keys(HIDE)) { const els = $$(selOf(k)); o[k] = { n: els.length, hidden: els.filter(e => getComputedStyle(e).display === 'none').length }; }
       return o;
+    },
+    /* Create Channel button + bottom bar geometry of the shown server pane */
+    cc() {
+      const bar = statusBars().find(e => e.offsetParent) || statusBars()[0], b = bar && bar.querySelector(':scope > .ts-server-status-constructive-buttons:not(.ts-hidden) > .tsv-tool-button');
+      const R = e => { if (!e || !e.getClientRects().length) return null; const r = e.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10 }; };
+      const t = b && b.querySelector('.tsv-tool-button-title');
+      return { bar: R(bar), collapsed: bar ? !!bar.__vue__.isSmall : null, btn: R(b), shown: !!R(b),
+        label: !!t && getComputedStyle(t).display !== 'none', radius: b ? getComputedStyle(b).borderRadius : '', title: b ? b.getAttribute('title') : null,
+        right: R(bar && bar.querySelector(':scope > .ts-server-informative-buttons')) };
+    },
+    /* main (tree) pane: paneWidth(px) sets its slot size like a drag of the divider (not saved; clamped to the slot minimum by the
+       client) and returns the previous slot size; paneWidth() returns the bottom bar width */
+    paneWidth(px) {
+      const L = winVm() && winVm().windowLayout, slot = L && L.windowSlots[L.mainIndex];
+      if (px != null && slot) { const was = slot.size; slot.size = px; slot.change = 0; L.injectOrUpdateStylesheet(L.mainIndex); return was; }
+      const bar = statusBars().find(e => e.offsetParent); return bar ? Math.round(bar.getBoundingClientRect().width) : null;
     },
     showServer() { const a = app(); a.showItem(a.connections[0]); },
     showDashboard() { const a = app(); a.showItem(a.dashboard); },

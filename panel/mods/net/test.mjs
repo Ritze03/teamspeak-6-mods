@@ -25,6 +25,41 @@ export default async function (ctx) {
     await ctx.waitFor(`+document.querySelector('${HUD}').getAttribute('data-updates') > ${u1}`, 'HUD updates over time', 6000);
     ctx.assert(/↓/.test(await ctx.eval(`document.querySelector('${HUD}').textContent`)), 'bandwidth shown by default');
 
+    // placement: bottom bar by default, first item of the stock connection-status group, no overlap with its neighbours
+    const geo = () => ctx.eval(`(() => { const h = document.querySelector('${HUD}'), g = h && h.parentElement, bar = g && g.parentElement;
+      const R = e => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom }; };
+      // the other visible bar items (the Create Channel group when shown; not the spacer, not the invisible measuring copy)
+      const others = bar ? [...bar.children].filter(c => c !== g && c.getClientRects().length && getComputedStyle(c).visibility !== 'hidden' && c.getBoundingClientRect().width > 4 && !/flex-grow/.test(c.className)) : [];
+      const left = others.map(R).sort((a, b) => b.r - a.r)[0] || null;
+      const sib = h && h.nextElementSibling, vp = h && h.querySelector('.net-ping'), vl = vp && R(vp);
+      return { inBottom: !!(bar && /status-bar/.test(bar.className)), first: !!g && g.firstElementChild === h, h: h && R(h), bar: bar && R(bar), sib: sib && R(sib), left,
+        ping: !!vl && vl.b <= R(h).b + 1 && vl.r <= R(h).r + 1 }; })()`);
+    const okGeo = (p, tag) => {
+      ctx.assert(p.inBottom && p.first, `${tag}: HUD is the first item of the bottom bar's connection-status group`);
+      ctx.assert(!p.sib || p.h.r <= p.sib.l + 1, `${tag}: HUD does not overlap the stock connection status (${Math.round(p.h.r)} <= ${p.sib && Math.round(p.sib.l)})`);
+      ctx.assert(!p.left || p.left.r <= p.h.l + 1, `${tag}: HUD does not overlap the Create Channel button (${p.left && Math.round(p.left.r)} <= ${Math.round(p.h.l)})`);
+      ctx.assert(p.h.r <= p.bar.r + 1 && p.h.l >= p.bar.l - 1, `${tag}: HUD inside the bar`);
+      ctx.assert(p.ping, `${tag}: ping readout visible inside the HUD`);
+    };
+    okGeo(await geo(), 'wide');
+    if (await ctx.eval(`!!window.__ts6modLayoutDev`)) {   // pane width helper of the layout core extension (works with the layout mod off)
+      const was = await ctx.eval(`__ts6modLayoutDev.paneWidth(200)`);   // clamped to the minimum by the client
+      try { await ctx.sleep(1200); okGeo(await geo(), 'narrow pane'); } finally { await ctx.eval(`__ts6modLayoutDev.paneWidth(${was})`); }
+      await ctx.sleep(600);
+    }
+    // top bar position (setting) moves it live, and back (the pills write the setting; the original settings object is put back)
+    const origNet = await ctx.eval(`JSON.stringify(__ts6mod.store().settings.net ?? null)`);
+    await ctx.openModsPage('net');
+    await ctx.waitFor(`document.querySelector('[data-ts6mod="net"] [data-pos="top"]')`, 'Position pills on the Net page');
+    await ctx.eval(`document.querySelector('[data-ts6mod="net"] [data-pos="top"]').click()`);
+    await ctx.restoreRoute();
+    await ctx.waitFor(`!document.querySelector('${HUD}').closest('[class*="status-bar"]')`, 'Position "Top bar" moves the HUD out of the bottom bar');
+    await ctx.openModsPage('net');
+    await ctx.eval(`document.querySelector('[data-ts6mod="net"] [data-pos="bottom"]').click()`);
+    await ctx.restoreRoute();
+    await ctx.waitFor(`!!document.querySelector('${HUD}').closest('[class*="status-bar"]')`, 'Position "Bottom bar" puts it back');
+    await ctx.eval(`(() => { const s = __ts6mod.store().settings, o = ${JSON.stringify(origNet)}; if (o === 'null') delete s.net; else s.net = JSON.parse(o); })()`);
+
     // popover: graph, stats, codec
     await ctx.eval(`document.querySelector('${HUD}').click()`);
     await ctx.waitFor(`!document.querySelector('${POP}').hidden`, 'popover opens on click');
