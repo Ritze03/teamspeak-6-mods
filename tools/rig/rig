@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+# Local test rig for per-speaker audio work. See superdoc/features/test-rig.md.
+#   rig up | down | status | check | talk <A|B> <wav> | record <seconds> <out.wav>
+set -uo pipefail
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO=$(cd "$HERE/../.." && pwd)
+RIG=${RIG_DIR:-$HOME/tmp/ts6-rig}
+RUN=$RIG/run
+SRV_DIR=$RIG/server/teamspeak3-server_linux_amd64
+SRV_VER=3.13.8
+TS_BIN=${TS6MOD_TS_BIN:-/opt/teamspeak/TeamSpeak}
+VOICE_PORT=9989 QUERY_PORT=10111 FT_PORT=30034 MOD_PORT=39001
+SINKS=(ts6rig_talk1 ts6rig_talk2 ts6rig_out ts6rig_deaf ts6rig_idle)
+# name  cdp-port  nickname      mic source (PULSE_SOURCE)        playback sink (PULSE_SINK)
+CLIENTS=(
+  "listener 9230 RigListener ts6rig_idle.monitor  ts6rig_out"
+  "talkerA  9231 RigTalkerA  ts6rig_talk1.monitor ts6rig_deaf"
+  "talkerB  9232 RigTalkerB  ts6rig_talk2.monitor ts6rig_deaf"
+)
+EXPECT=${#CLIENTS[@]}          # clients every instance must see once all are connected
+mkdir -p "$RUN" "$RIG/profiles" "$RIG/wav"
+
+log() { echo "rig: $*" >&2; }
+die() { log "$*"; exit 1; }
+js() { node "$HERE/js.mjs" "$@"; }                                  # js <cdp-port> <expr|@file>
+cdp_up() { curl -sf "http://127.0.0.1:$1/json/version" >/dev/null 2>&1; }
+pids_of() { pgrep -f -- "--remote-debugging-port=$1( |\$)" || true; }  # main process(es) of the client on a CDP port
+wait_for() { # wait_for <seconds> <description> <cmd...>
+  local t=$1 d=$2; shift 2; local i
+  for ((i = 0; i < t * 2; i++)); do "$@" >/dev/null 2>&1 && return 0; sleep 0.5; done
+  die "timeout waiting for $d"
+}
+
+# ---------- audio ----------
+sinks_up() {
+  local s
+  for s in "${SINKS[@]}"; do
+    pactl list short sinks | cut -f2 | grep -qx "$s" ||
+      pactl load-module module-null-sink sink_name="$s" sink_properties="device.description=$s" >/dev/null || die "cannot load null sink $s"
+  done
+}
+sinks_down() { pactl list short modules | awk '/ts6rig/ {print $1}' | xargs -r -n1 pactl unload-module; }
+
+# ---------- server ----------
+srv_gone() { ! pgrep -f "$SRV_DIR/ts3server" >/dev/null; }
+srv_listening() { ss -lunH "sport = :$VOICE_PORT" | grep -q . ; }
+srv_up() {
+  [ -x "$SRV_DIR/ts3server" ] || die "server missing: run '$HERE/rig fetch-server'"
+  srv_listening && return 0
+  rm -rf "$RIG/server/data"; mkdir -p "$RIG/server/data"            # fresh database every cold start (new token/password)
+  ( cd "$RIG/server/data" && TS3SERVER_LICENSE=accept ccorral -- "$SRV_DIR/ts3server" \
+      default_voice_port=$VOICE_PORT voice_ip=127.0.0.1 query_port=$QUERY_PORT query_ip=127.0.0.1 query_protocols=raw \
+      filetransfer_port=$FT_PORT filetransfer_ip=127.0.0.1 licensepath="$SRV_DIR" dbsqlpath="$SRV_DIR/sql/" \
+      logpath="$RIG/server/data/logs" > "$RIG/server/out.log" 2>&1 & echo $! > "$RUN/server.launch" )
+  wait_for 30 "server credentials" grep -q 'token=' "$RIG/server/out.log"
+  local pw key tok
+  pw=$(sed -n 's/.*password= "\(.*\)".*/\1/p' "$RIG/server/out.log" | head -1)
+  key=$(sed -n 's/.*apikey= "\(.*\)".*/\1/p' "$RIG/server/out.log" | head -1)
+  tok=$(sed -n 's/^ *token=\(.*\)$/\1/p' "$RIG/server/out.log" | head -1)
+  printf 'SERVERADMIN_PASSWORD=%s\nAPIKEY=%s\nTOKEN=%s\nQUERY=127.0.0.1:%s\n' "$pw" "$key" "$tok" $QUERY_PORT > "$RIG/creds.env"
+  wait_for 30 "server voice port" srv_listening
+  pgrep -f "$SRV_DIR/ts3server" | head -1 > "$RUN/server.pid"
+}
+srv_down() {
+  [ -f "$RUN/server.pid" ] && kill "$(cat "$RUN/server.pid")" 2>/dev/null
+  local p; p=$(pgrep -f "$SRV_DIR/ts3server" || true); [ -n "$p" ] && kill $p 2>/dev/null
+  wait_for 15 "server stop" srv_gone
+  rm -f "$RUN/server.pid" "$RUN/server.launch"
+}
+# one-line serverquery (raw, loopback): srv_query 'cmd1' 'cmd2' ...
+srv_query() {
+  . "$RIG/creds.env"
+  { sleep 0.5; echo "login serveradmin $SERVERADMIN_PASSWORD"; echo "use 1"; for c in "$@"; do echo "$c"; done; sleep 0.5; echo quit; } |
+    timeout 10 bash -c "exec 3<>/dev/tcp/127.0.0.1/$QUERY_PORT; cat <&3 & cat >&3; wait" 2>/dev/null
+}
+
+# ---------- clients ----------
+client_env() { # client_env <name> <mic> <sink> -> env words for the isolated profile
+  local P=$RIG/profiles/$1; mkdir -p "$P"/{home,config,cache,data,state,tmp}
+  echo "HOME=$P/home XDG_CONFIG_HOME=$P/config XDG_CACHE_HOME=$P/cache XDG_DATA_HOME=$P/data XDG_STATE_HOME=$P/state TMPDIR=$P/tmp PULSE_SOURCE=$2 PULSE_SINK=$3"
+}
+client_up() { # client_up name port nick mic sink
+  local name=$1 port=$2 nick=$3 mic=$4 sink=$5 extra=()
+  cdp_up "$port" && { log "$name already running"; return 0; }
+  if [ "$name" = listener ]; then
+    [ -f "$REPO/native/libts6mod.so" ] || make -C "$REPO/native" >/dev/null || die "native module build failed"
+    extra=(LD_PRELOAD="$REPO/native/libts6mod.so" TS6MOD_PORT=$MOD_PORT)
+  fi
+  # Fresh profile every start: a reused profile comes back with a "Confirm your Account" login wall that blocks connecting.
+  [ -n "${RIG_KEEP_PROFILES:-}" ] || rm -rf "$RIG/profiles/$name"
+  mkdir -p "$RIG/profiles/$name"
+  ( cd "$RIG/profiles/$name" && env $(client_env "$name" "$mic" "$sink") "${extra[@]}" ccorral -- "$TS_BIN" \
+      --remote-debugging-port="$port" > client.log 2>&1 & ) > /dev/null 2>&1   # detached from our stdio (so "rig up | tail" ends); the client segfaults on SIGTERM at exit and the job report must not leak
+  wait_for 60 "$name CDP port $port" cdp_up "$port"
+  wait_for 60 "$name UI" js "$port" "document.querySelector('#app').__vue__.appController.connections.length>=0"
+  # Skip the first-launch wizard (splash/Terms/sign-in; it appears on every fresh profile and blocks everything) and connect
+  # through the UI's own openConnection, the call the ts3server:// handler and the quick-connect search use.
+  js "$port" "(()=>{const a=document.querySelector('#app').__vue__.appController;a.welcomeDisplayed=true;
+    const c=a.openConnection({address:'127.0.0.1',port:$VOICE_PORT,nickname:'$nick',phonetic_nickname:'',identity:'',server_password:'',
+      default_channel:'/',default_channel_password:'',default_channel_id:'0',sound_pack:'',show_serverquery_clients:false,send_mytsid:true,
+      announce_to_chat:false,connect_muted:false,connectTime:0});a.showItem(c);return 1})()" >/dev/null || die "$name: connect failed"
+  pids_of "$port" > "$RUN/$name.pid"
+}
+connected_n() { # connected_n <port> -> number of clients visible once established, else 0
+  js "$1" "(()=>{const c=document.querySelector('#app')?.__vue__?.appController?.connections?.[0]?.serverConnectionHandler;return c&&c.connectionStatus===4?[...c.GetFlatListClients()].length:0})()" 2>/dev/null
+}
+all_connected() { local c n; for c in "${CLIENTS[@]}"; do set -- $c; n=$(connected_n "$2") || return 1; [ "${n:-0}" -ge "$EXPECT" ] || return 1; done; }
+talker_setup() { # continuous transmission (VAD off; push-to-talk is off by default) and a clean capture path (no denoise/AGC)
+  js "$1" "(async()=>{const h=document.querySelector('#app').__vue__.appController.connections[0].serverConnectionHandler;
+    const set=(k)=>new Promise(r=>tsclient_internal.setPreProcessorConfigValue(h.id,k,'false',s=>r(s)));
+    const rs=[await set('vad'),await set('denoise'),await set('agc'),await set('typing_suppression')];
+    const m=await new Promise(r=>tsclient_internal.getPreProcessorConfigValue(h.id,'vad',(s,v)=>r(v)));return rs.every(x=>x===0)&&m==='false'})()" | grep -q true
+}
+
+listener_agc() { # RIG_STOCK_AGC=off: switch the client's own playback AGC off on the listener (default on, like a real client)
+  js 9230 "new Promise(r=>{const h=document.querySelector('#app').__vue__.appController.connections[0].serverConnectionHandler;
+    tsclient_internal.setPlaybackConfigValue(h.id,'agc','false',s=>r(s===0))})" | grep -q true
+}
+
+# Kick clients that are not ours (e.g. a normal client that was handed a ts3server:// URL and keeps reconnecting to the rig server).
+kick_strays() {
+  local line id nick n=0
+  srv_query 'clientlist' | tr '|' '\n' | grep -o 'clid=[0-9]* .*client_type=0' | while read -r line; do
+    id=${line#clid=}; id=${id%% *}; nick=$(sed -n 's/.*client_nickname=\([^ ]*\).*/\1/p' <<<"$line")
+    case $nick in RigListener|RigTalkerA|RigTalkerB) ;; *) log "kicking stray client '$nick' (clid $id) from the rig server"
+      srv_query "clientkick clid=$id reasonid=5 reasonmsg=rig-stray" >/dev/null ;; esac
+  done
+}
+
+cmd_up() {
+  sinks_up
+  [ -f "$RIG/wav/bursty.wav" ] || "$HERE/make-wavs.sh" >/dev/null
+  srv_up
+  local c
+  for c in "${CLIENTS[@]}"; do set -- $c; client_up "$@"; done
+  wait_for 90 "all clients connected (each must see $EXPECT clients)" all_connected
+  for c in "${CLIENTS[@]}"; do set -- $c; case $1 in talker*) wait_for 15 "$1 vad off" talker_setup "$2" ;; esac; done
+  [ "${RIG_STOCK_AGC:-}" = off ] && { wait_for 15 "listener stock agc off" listener_agc; }
+  kick_strays
+  log "up: server 127.0.0.1:$VOICE_PORT, listener CDP 9230 / mod API 127.0.0.1:$MOD_PORT, talkers CDP 9231 9232"
+}
+
+cmd_down() {
+  local c f p
+  for c in "${CLIENTS[@]}"; do
+    set -- $c; p="$(pids_of "$2") $(cat "$RUN/$1.pid" 2>/dev/null)"
+    # shellcheck disable=SC2086
+    kill $p 2>/dev/null
+  done
+  for c in "${CLIENTS[@]}"; do set -- $c; wait_for 20 "$1 stop" bash -c "! curl -sf http://127.0.0.1:$2/json/version" || { kill -9 $(pids_of "$2") 2>/dev/null; }; done
+  # child processes of a client carry the profile dir in their command line
+  p=$(pgrep -f -- "$RIG/profiles/" || true); [ -n "$p" ] && { sleep 1; kill $p 2>/dev/null; sleep 1; p=$(pgrep -f -- "$RIG/profiles/" || true); [ -n "$p" ] && kill -9 $p 2>/dev/null; }
+  srv_down
+  sinks_down
+  rm -f "$RUN"/*.pid
+  log "down"
+}
+
+cmd_status() {
+  echo "server:   $(srv_listening && echo "up (udp 127.0.0.1:$VOICE_PORT, query 127.0.0.1:$QUERY_PORT)" || echo down)"
+  echo "sinks:    $(pactl list short modules | grep -c ts6rig)/${#SINKS[@]} null sinks loaded"
+  local c n
+  for c in "${CLIENTS[@]}"; do
+    set -- $c
+    if cdp_up "$2"; then
+      echo "$1: CDP $2, pid(s) $(pids_of "$2" | tr '\n' ' '), sees $(connected_n "$2") clients: $(js "$2" "[...document.querySelector('#app').__vue__.appController.connections[0].serverConnectionHandler.GetFlatListClients()].map(c=>c.nickname+'='+c.id).join(' ')" 2>/dev/null)"
+    else echo "$1: down"; fi
+  done
+  curl -sf "http://127.0.0.1:$MOD_PORT/status" 2>/dev/null | sed 's/^/listener mod \/status: /' || echo "listener mod API: not reachable"
+}
+
+wav_arg() { [ -f "$1" ] && echo "$1" || echo "$RIG/wav/${1%.wav}.wav"; }
+cmd_talk() { # talk <A|B> <wav>   (blocks until the file has been played)
+  local t=${1:-} f; [ -n "$t" ] && [ -n "${2:-}" ] || die "usage: rig talk <A|B> <wav|bursty|quiet|tone>"
+  f=$(wav_arg "$2"); [ -f "$f" ] || die "no such wav: $f"
+  case ${t^^} in A) t=ts6rig_talk1 ;; B) t=ts6rig_talk2 ;; *) die "talker must be A or B" ;; esac
+  pw-play --target "$t" "$f"   # (paplay -d delivered digital silence into the null sinks in testing)
+}
+cmd_record() { # record <seconds> <out.wav>: what the listener plays (48 kHz mono s16)
+  [ -n "${2:-}" ] || die "usage: rig record <seconds> <out.wav>"
+  timeout -s INT "$1" pw-record --target ts6rig_out -P stream.capture.sink=true --rate 48000 --channels 1 --format s16 "$2"
+  [ -s "$2" ] || die "recording failed"
+}
+stats() { ffmpeg -hide_banner -nostats -i "$1" -af volumedetect -f null - 2>&1 | sed -n 's/.*\(mean_volume\|max_volume\): \(-\?[0-9.]*\) dB.*/\2/p' | tr '\n' ' '; }
+
+cmd_check() {
+  all_connected || die "not up (run: rig up)"
+  local out=${RIG}/check; mkdir -p "$out"; local fail=0 who id
+  # id map as the listener sees it
+  declare -A ID
+  for who in A B; do
+    ID[$who]=$(js 9230 "[...document.querySelector('#app').__vue__.appController.connections[0].serverConnectionHandler.GetFlatListClients()].find(c=>c.nickname==='RigTalker$who')?.id")
+    [ -n "${ID[$who]}" ] && [ "${ID[$who]}" != null ] || die "listener does not see RigTalker$who"
+  done
+  js 9230 "(()=>{if(window.__rigSeen)return 1;window.__rigSeen={};const h=document.querySelector('#app').__vue__.appController.connections[0].serverConnectionHandler;
+    setInterval(()=>{for(const c of h.GetFlatListClients())if(c.properties.flagTalking)window.__rigSeen[c.id]=(window.__rigSeen[c.id]||0)+1},100);return 0})()" >/dev/null
+  echo "client ids as seen by the listener: RigTalkerA=${ID[A]} RigTalkerB=${ID[B]}"
+  local pair w
+  for pair in "A bursty" "B quiet"; do
+    set -- $pair; who=$1 w=$2
+    js 9230 "(window.__rigSeen={},0)" >/dev/null
+    cmd_record 14 "$out/$who-$w.wav" & local rp=$!
+    sleep 1; cmd_talk "$who" "$w"; wait $rp
+    local seen; seen=$(js 9230 "Object.keys(window.__rigSeen).join(',')" | tr -d '"')
+    echo "talker $who plays $w.wav -> listener flagTalking samples by clientId: $seen"
+    echo "  recorded (mean_volume max_volume dBFS): $(stats "$out/$who-$w.wav")"
+    case ",$seen," in *",${ID[$who]},"*) ;; *) log "FAIL: listener never saw clientId ${ID[$who]} talking"; fail=1 ;; esac
+    local mx; mx=$(stats "$out/$who-$w.wav" | awk '{print $2}')
+    awk -v m="$mx" 'BEGIN{exit !(m > -70)}' || { log "FAIL: recording of $who is silent (max $mx dBFS)"; fail=1; }
+  done
+  echo "listener mod: $(curl -sf "http://127.0.0.1:$MOD_PORT/status" | head -c 300)"
+  [ $fail = 0 ] && echo "rig check: PASS" || { echo "rig check: FAIL"; return 1; }
+}
+
+cmd_fetch_server() {
+  mkdir -p "$RIG/server"; cd "$RIG/server" || exit 1
+  curl -fSLO "https://files.teamspeak-services.com/releases/server/$SRV_VER/teamspeak3-server_linux_amd64-$SRV_VER.tar.bz2" &&
+    tar xjf "teamspeak3-server_linux_amd64-$SRV_VER.tar.bz2"
+}
+
+case ${1:-} in
+  up) cmd_up ;; down) cmd_down ;; status) cmd_status ;; check) cmd_check ;;
+  talk) shift; cmd_talk "$@" ;; record) shift; cmd_record "$@" ;;
+  srv-up) sinks_up; srv_up ;; srv-down) srv_down ;;
+  fetch-server) cmd_fetch_server ;; wavs) "$HERE/make-wavs.sh" ;;
+  *) echo "usage: rig up | down | status | check | talk <A|B> <wav> | record <seconds> <out.wav> | wavs | fetch-server"; exit 2 ;;
+esac
