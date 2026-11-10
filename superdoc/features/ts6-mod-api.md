@@ -1,0 +1,212 @@
+# Mod framework and mod API
+
+The injected UI side of the mods is a small framework: **core** (`panel/core/`) plus any number of **mods**
+(`panel/mods/<name>/`). A mod never touches TeamSpeak internals; it calls the semantic API below (`api.topBar.add`,
+`api.contextMenu.client.add`, ...). Everything TS-specific sits in one file, `panel/core/anchors.js`. Mechanics behind
+the slots (what was probed on the client): [ts6-ui-extension-points.md](ts6-ui-extension-points.md); launch/bridge/events:
+[ts6-modding-surface.md](ts6-modding-surface.md); the Mods page and the Dashboard mod: [mods-panel.md](mods-panel.md).
+
+```
+launcher/ts6-mod -> tools/cdp/mods-inject.mjs --CDP--> UI page
+   panel/core/anchors.js   the ONLY file naming TS classes/ids, Vue paths, bridge calls; every anchor has a resolve()
+   panel/core/core.js      registry, cleanup ledger, persistence, api object, extend/defineSlot
+   panel/core/slots.js     topBar, sidebar, contextMenu, treeRow, chatInput, toast, modal, state, nav, audio
+   panel/core/page.js      "Mods" settings page, api.ui kit, api.settings
+   panel/core/core.css     widget styles (only --mods-* tokens)
+   panel/mods/<name>/      one mod each: index.js (+ style.css, test.mjs)
+   panel/examples/<name>/  sample plugins, injected only on request
+```
+
+Why this shape: the UI is a minified Vue 2 app whose internals change per release. Concentrating every TS name in
+`anchors.js` means a TS update breaks one file, and `anchors.check()` says which anchor (by name) no longer resolves.
+Why per-mod cleanup is automatic: requirement "switching a mod off removes its DOM, listeners, timers and polling;
+everything off = vanilla client". Mods get that for free because everything they create goes through the api, which
+records an undo for it.
+
+## Writing a mod
+
+Convention: `panel/mods/<name>/index.js` (registers itself), optional `style.css` (added on enable, removed on disable),
+optional `test.mjs` (see "Tests"). `<name>` is the directory name; the mod `id` should equal it.
+
+```js
+ts6mod.register({
+  id: 'hello', title: 'Hello', description: 'Shows what the API can do.',   // shown on the Mods page with its switch
+  enable(api) {                      // runs when the switch goes on (default: off); may be async
+    api.topBar.add({ title: 'Hello', icon: 'settings-addons', onClick: () => api.toast('Hello', 'It works') });
+  },
+  disable() {},                      // optional; only for state outside the api (the ledger undoes the rest)
+  settings(api, container) {         // optional: UI shown under the switch on the Mods page while the mod is on
+    container.append(api.ui.note('Settings go here'));
+    return () => {};                 // optional cleanup, called when the page is left
+  },
+});
+```
+
+Rules: (1) every mod defaults to **off**; (2) mods contain **no raw TS names**: this lint must stay empty and is step 1 of
+run-all: `grep -rnE '(^|[^a-zA-Z0-9_])tsv?-|__vue__|tsclient_internal' panel/mods/`. Icon names such as `'settings-addons'` are
+plain strings and fine. If a mod needs something the api lacks, add a slot/helper to core + anchors, not a TS name to the mod;
+(3) use only `api.*` for anything that has to be undone (a raw `setInterval` in a mod is not cleaned up);
+(4) style only with `--mods-*` tokens (below) so default and custom themes both work.
+
+## API reference
+
+`api` is created per mod on enable. Handles returned by `add`-style slot calls are `{remove(), update?(patch)}`; helper
+calls (`interval`, `listen`, ...) return a plain undo function. Everything is also undone automatically on disable.
+Status column: all slots below were run against the live client by `tools/test/core-tests.mjs` (yes) unless stated.
+
+| Call | What it does | Mechanism (anchored in `anchors.js`) | Tested live |
+|---|---|---|---|
+| `api.topBar.add({title, icon, onClick, active})` or `add(element)` | button in the top bar next to mic/speaker; `active` bool or fn, `update(patch)` re-evaluates | wrap the `buttons` computed getter of the central toolbar component; element form appends the node to the toolbar | yes (spec form); element form not separately |
+| `api.sidebar.addIcon({title, icon, onClick, active})` | button in the left icon column (several allowed, in registration order); `active` bool or fn, re-evaluated on every route change | own Vue block built from the column's markup + `<ts-icon>`, placed behind the last stock group, restored by a shared DOM observer | yes |
+| `api.contextMenu.client.add({label, icon, onClick(target), visible(target)})` / `.channel.add(...)` | item in the right-click menu of client / channel rows (section "Mods"); `target = {kind, id, schid, name, model}` | `$watch('data')` on the context-menu container + last right-clicked row | yes |
+| `api.contextMenu.server.add(...)` | **unsupported, throws** a clear error: the server entry has no context menu of its own (probed; a synthetic right-click on the sidebar header and root row opens nothing) | - | yes (throws) |
+| `api.treeRow.decorate({for:'client'\|'channel', render(model)})` -> `{remove}` | inline marker at the end of every matching row; `render` returns string / Node / null; re-rendered on talk/property/move events; rows are recycled, markers keyed by model id | debounced DOM observer + `row.__vue__.$props.data` | yes |
+| `api.treeRow.refresh()` | re-render all decorations now | - | yes (via events) |
+| `api.chatInput.onBeforeSend(fn)` -> `{remove}` | `fn({text, limit, element, kind})`: return nothing (keep), `false` (cancel), a string (replace) or `string[]` (send each as its own message, in order, through the composer's own send path) | per composer instance, wrap `sendMessageContent` (both Enter and the send button end there); instances are found on `focusin` and by the DOM observer | logic yes (fake composer, because the test never sends a real message); real composer verified patched/restored |
+| `api.chatInput.available() / limit() / element() / text() / setText(t)` | the active composer (the focused one, else the first): length limit (8192 here), the editable element, its text | reads `maxInputLength`, `msg` of the composer component | yes |
+| `api.toast(title, text, opts?)` | local notification (notification center + bell) | `createGlobalNotification(plainObject)`; removed by tag on disable. Whether a transient popup is drawn is not confirmed visually | yes (enters/leaves the notification center) |
+| `api.modal.show({title, render(container, close), onClose})` -> `{close()}` | the app's own modal overlay; closing on disable | `events.onInvokeModalOverlayEmitter.fire` | yes |
+| `api.settings.addSection({title, render(container, scopedApi)})` | extra titled block in this mod's area of the Mods page | page.js | yes |
+| `api.settings.addPage({key, title, icon, render(container, scopedApi)})` | a separate category in the client's Settings navigation | push into the Settings mode list + rebuild nav | yes |
+| `api.settings.open()` | open the Mods page | router | yes |
+| `api.events.on(name, cb)` | native -> UI events (`talkStatusChanged`, `clientMoved`, `textMessage`, ...) | one dispatcher per event name over `tsclient_internal.on` (it has no "off", so un-subscribing removes the callback from the dispatcher) | yes |
+| `api.bridge.call(name, ...args)` | promisified native bridge call: resolves with the value (an array if the callback carries more than one value), rejects with `error.status` on non-zero status. Methods without a callback (`saveJsonBlob`, `deleteJsonBlob`) are detected and called without one | `tsclient_internal[name]` | yes |
+| `api.state.connections() / current() / ownClient() / channel() / channels() / clients({all})` | read helpers over the displayed connection: plain summaries plus `.model` (the live Vue model) | `appController.connections`, `serverConnectionHandler` | yes |
+| `api.version()` | `{api, client, build, chrome}`, e.g. build number for gating | `getClientLibVersion`, `getChromeVersion` (fetched before mods are enabled) | yes |
+| `api.nav.route() / onDashboard() / showDashboard()` | route info; open the Dashboard (same action as the main-menu entry) | router, `showItem(dashboard)` | yes |
+| `api.audio.stock() / setStockAgc(v) / setExperimentalAgc(v)` | read/set TeamSpeak's own playback AGC options (persist; the experimental one reopens the playback stream) | `audioSettings` model, see [ts6-modding-surface.md](ts6-modding-surface.md) | read yes; setters not run by tests (they change user settings) |
+| `api.native.get(path)` / `.post(path, body)` / `.available()` | native module control API (`/config`, `/status`, `/meters`) through the CDP binding `ts6modNative` (the page cannot open http://) | binding + injector proxy | yes (audio mod) |
+| `api.storage.get(key, default) / set / remove / all` | per-mod persisted settings | in memory + debounced `saveJsonBlob` | yes |
+| `api.addStyle(css)` | `<style>` removed on disable (a mod's `style.css` is added the same way) | - | yes |
+| `api.el(tag, props, ...kids)` | create a DOM node marked as this mod's (`data-ts6mod`); props: `class`, `on:{event:fn}`, `style`, attributes/properties | - | yes |
+| `api.icon(name)` | the TS icon element (`<ts-icon>` needs Vue, so it is rendered through a tiny Vue instance; retried while the UI loads) | `Vue` + `ts-icon` | yes |
+| `api.ui.*` | widget kit for settings areas: `toggle`, `row`, `subtitle`, `note`, `section`, `row2`, `button`, `pill`, `slider`, `meter`, `h` | TS settings markup for `toggle`, our `mods-*` classes for the rest | yes (audio mod) |
+| `api.interval(fn, ms)`, `api.timeout(fn, ms)` | timers, cleared on disable | - | yes |
+| `api.listen(target, type, fn, opts)` | DOM listener, removed on disable | - | yes |
+| `api.observe(target, opts, cb)` | `MutationObserver`, disconnected on disable | - | yes |
+| `api.onDom(cb, {debounce})` | debounced "something in the page changed" callback (one shared observer) | - | yes |
+| `api.watch(getter, cb, opts)` | Vue `$watch` on app state, unwatched on disable | root vm `$watch` | not separately |
+| `api.onRoute(cb)` | route change callback | `router.afterEach` | yes (sidebar `active`) |
+| `api.scope()` | child api with its own ledger; `scope.dispose()` undoes just that. The `api` passed to `settings()` is a scope that dies when the Mods page is left | - | yes |
+| `api.extend`, `api.ext`, `api.require`, `api.defineSlot`, `api.slots` | extensibility, see below | - | yes (examples) |
+
+Not implemented from the original sketch ([ts6-ui-extension-points.md](ts6-ui-extension-points.md) section 10): `addHeaderItem`
+(sidebar/content header icons) and `addPanel` (extra tab on a client/channel/server view). The mechanisms are known (prototype
+getter wrap / `contentModes` push) and belong in `anchors.js` + `slots.js` when a mod needs them. `onReady` is internal (core
+waits for the Vue app, then enables the switched-on mods).
+
+### Extensibility (plugins that add API surface)
+
+A mod can offer something to other mods, whichever is enabled first:
+
+- `api.extend('name', impl)`: provider. `api.ext.name` gives `impl` to anyone (undefined while absent);
+  `api.require('name', impl => { ...; return cleanupFn })` runs now if the provider is enabled, otherwise as soon as it is, and
+  runs the cleanup when the provider goes away or the consumer is disabled. Names are unique (a second `extend` throws).
+- `api.defineSlot('name', {attach(spec, {owner}) -> detachFn | {detach, update}})`: provider of a new slot. Consumers call
+  `api.slots.name.add(spec)` -> `{remove(), update(patch)}`. Items added **before** the slot exists are queued and attached when
+  it is defined; when the provider is disabled its items detach and are re-attached if the slot comes back. `api.slots.name.defined()`
+  tells if a provider is there.
+
+Why lazy resolution instead of load order: all mods are loaded first, then the switched-on ones are enabled in registration
+order, so a consumer can easily be enabled before its provider; queueing/waiting makes the order irrelevant.
+Samples: `panel/examples/ext-provider/` and `panel/examples/ext-consumer/`, with tests that run both orders.
+
+## Persistence
+
+One JSON blob under the bridge key `mods`: `{"enabled": {"<id>": true}, "settings": {"<id>": {...}}}`, written with
+`tsclient_internal.saveJsonBlob(key, string)` (no callback) and read with `getJsonBlob(key, cb(status, string))` (empty
+string when absent); `deleteJsonBlob(key)`. It lives in the profile's `json_blobs` table like the client's own blobs and
+is not touched by the native config. The native AGC `enabled` switch deliberately stays in the native module's config file:
+the audio hook needs it at client start, before any UI exists (see [agc.md](agc.md)).
+
+## Theming
+
+Mod styles use only the tokens `--mods-fg`, `--mods-muted`, `--mods-accent`, `--mods-accent-fg`, `--mods-error`, `--mods-ok`,
+`--mods-warn`, `--mods-info`, `--mods-line`, `--mods-field-bg`, `--mods-field-line`, `--mods-track`, `--mods-hover`. `anchors.js`
+(`themeTokens`) maps them onto TS's own custom properties (`--ts-primary-font-color`, `--ts-primary-accent-color`,
+`--ts-error-color`, ...), so default and custom themes (which override those properties) both look right. The tokens and the
+core stylesheet exist only while a mod is enabled or the Mods page is shown. The settings widgets (`api.ui.toggle`) reuse TS's
+own markup/classes (via anchors), the rest are `mods-*` classes.
+
+## Anchors
+
+`panel/core/anchors.js` is the only place that names: DOM classes/ids (`.tsv-*`, `.ts-*`, `<ts-icon>`), Vue paths
+(`__vue__`, `appController`, `contentModes`, `serverConnectionHandler`, ...) and bridge calls (`tsclient_internal.*`).
+Families (each entry is `def(name, description, resolve, optional)`):
+
+- `app.*`: root Vue instance, controller, Vue constructor, router, connections, settings mode list, Dashboard item, notifications, modal emitter, audio settings.
+- `dom.*`: central toolbar, left icon column, context-menu container, tree scroller/rows (optional: only while a tree is shown), chat composer (optional: only while a chat is shown).
+- `bridge.*`: the bridge methods the core uses (`on`, `getJsonBlob`, `saveJsonBlob`, `deleteJsonBlob`, `getClientLibVersion`, `getChromeVersion`).
+- `class.*`: the TS CSS classes the widgets borrow, checked against the loaded stylesheets.
+- `theme.tokens`: the TS custom properties the `--mods-*` tokens are built from.
+
+Health check: `__ts6mod.anchors.check()` in the page runs every `resolve()` and returns `[{name, desc, ok, found, note}]`; step 2 of
+run-all prints the failing ones by name. Optional anchors that are absent only because of what is displayed are not failures
+(run-all opens a view with tree and composer first).
+
+**After a TS update:** start the client with `launcher/ts6-mod`, run `node tools/test/run-all.mjs`. Every `FAIL anchor <name>`
+names the resolve to fix in `anchors.js` (the failing selector/path is in its description). Fix it there (probe in the page with
+`node tools/cdp/cdp.mjs eval '<expr>'`), then `node tools/cdp/mods-reload.mjs` swaps the code into the running client without a
+restart, and re-run. Mods and tests should not need changes. `core-tests.mjs` additionally exercises each slot end to end, which
+catches drift that a resolve cannot (e.g. the structure of a menu data object).
+
+## Tests
+
+`node tools/test/run-all.mjs [--cdp-port 9222] [--control-port 38998] [--examples] [--no-reload] [--only <id>]` (Node 22+, no
+dependencies, against a running modded client; exit code 1 on any FAIL; SKIP does not fail):
+
+1. **lint**: the grep above over `panel/mods/`;
+2. **anchors**: every anchor resolves on this client;
+3. **native signature scan**: `native/test/sigscan.sh` if it exists, else SKIP;
+4. **mod tests**: every `panel/mods/*/test.mjs` (and `panel/examples/*/test.mjs` with `--examples`), then
+   `tools/test/core-tests.mjs` (core + every slot; it may name TS internals because it tests the anchors layer);
+5. **vanilla**: with every mod off, no `[data-ts6mod]` DOM, no ledger entries, no core stylesheet, no DOM observer, no native
+   polling, no event subscriptions, no extensions/slots, and Settings has only the "Mods" entry.
+
+Unless `--no-reload`, run-all first replaces the panel code in the page with the files on disk (same as `mods-reload.mjs`), so
+tests judge the repo, not what the injector loaded at start. Mod switches are changed in memory only (`persist:false`) and put
+back; the route is restored after every test; throw-away test mods (`t-*`) are removed.
+
+**`test.mjs` contract:** `export default async function (ctx) { ... }`; throwing or a failed assert = FAIL. `ctx`:
+
+| Member | Meaning |
+|---|---|
+| `ctx.eval(expr)` | evaluate an expression in the UI page (promises awaited), returns the JSON value |
+| `ctx.enable(id)` / `ctx.disable(id)` | switch a mod in memory; resolves when `enable()` finished (throws with the mod's error if it failed) |
+| `ctx.assert(cond, msg)` / `ctx.equal(actual, expected, msg)` | assertions (`equal` is deep via JSON) |
+| `ctx.assertClean(id)` | the mod is off and left no trace: empty ledger (no timers/listeners/observers/slots/...), no `[data-ts6mod="id"]` node |
+| `ctx.waitFor(expr, msg, ms)` | poll until truthy, else fail with `msg` |
+| `ctx.openModsPage()` / `ctx.restoreRoute()` | navigate to the Mods page / back to where the test started |
+| `ctx.pressEscape()` | trusted Escape key (closes menus that ignore synthetic events) |
+| `ctx.trace()` | core diagnostics: marked DOM, style/observer state, native request count, ledgers, extensions, slots, event subscriptions |
+| `ctx.controlPort`, `ctx.cdpPort`, `ctx.cdp`, `ctx.sleep(ms)`, `ctx.log(text)` | plumbing |
+
+Test files live inside `panel/mods/<name>/`, so they are covered by the lint: use `__ts6mod.*` (core diagnostics) and the mod's own
+marked DOM (`[data-ts6mod="<id>"]`), never TS names. Page-side core handles for tests: `__ts6mod.trace()`, `.ledger(id)`,
+`.list()`, `.setEnabled(id, on, {persist})`, `.route()`, `.goto(path)`, `.open()`, `.anchors.check()`.
+
+## Launcher, injector, hot reload
+
+`launcher/ts6-mod` env vars:
+
+| Env | Meaning |
+|---|---|
+| `TS6MOD_TS_BIN` | client binary (default the standard install path) |
+| `TS6MOD_CDP_PORT` | DevTools (CDP) port, default 9222 |
+| `TS6MOD_PORT` | native control API port, default 38998 |
+| `TS6MOD_PROFILE_DIR=<dir>` | isolated profile: `HOME` and `XDG_CONFIG_HOME/CACHE_HOME/STATE_HOME/DATA_HOME` point at subdirectories of `<dir>`, so several clients run side by side with their own settings database and native config/log; only a client on the same CDP port blocks the start |
+| `TS6MOD_EXAMPLES=1` | also inject `panel/examples/*` (default off) |
+| `TS6MOD_WRAP` | command prefix, e.g. `ccorral --` |
+
+Everything else on the command line is passed to the client, e.g. `ts3server://<host>:<port>?nickname=<name>` to auto-connect.
+Without `TS6MOD_PROFILE_DIR` the launcher refuses to start while a default-profile client runs (a second start would be swallowed by
+the running instance and the module could not be preloaded); clients carrying a different `--remote-debugging-port` are assumed to be
+isolated and are ignored. Example for a second client: `TS6MOD_PROFILE_DIR=<dir> TS6MOD_CDP_PORT=9230 TS6MOD_PORT=39000 launcher/ts6-mod`.
+
+`tools/cdp/mods-inject.mjs [--cdp-port N] [--port N] [--examples]` injects (`Page.addScriptToEvaluateOnNewDocument` + `Runtime.evaluate`;
+**never `Page.reload`**, it wipes the client's auto-connect state) one script built by `tools/cdp/bundle.mjs`: `panel/core/*.js` (anchors,
+core first), then every `panel/mods/*/index.js` with its `style.css`, then `panel/examples/*` only with `--examples`. It is idempotent
+(`window.__ts6mod` guard) and keeps the `ts6modNative` binding that proxies `/config`, `/status`, `/meters` to the native control API.
+
+`node tools/cdp/mods-reload.mjs [--cdp-port N] [--examples] [--mod <id>]...` hot-swaps the panel code from disk into the running client
+(whole core + mods, or just the named mod directories); mods that were on stay on. Use it while developing a mod instead of restarting.

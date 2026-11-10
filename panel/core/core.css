@@ -1,0 +1,40 @@
+/* ts6-mods core styles. Only classes prefixed mods-; colours come from the --mods-* tokens, which anchors.js maps
+ * to the active TS theme's own custom properties (so default and custom themes both look right). */
+.mods-card { color: var(--mods-fg); }
+.mods-title { margin: 4px 0 8px; font-size: 15px; font-weight: 600; }
+.mods-subtitle { margin: 14px 0 6px; font-size: 13px; font-weight: 600; opacity: .9; }
+.mods-mod { margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--mods-line); }
+.mods-mod:last-child { border-bottom: 0; }
+.mods-mod-body { margin: 2px 0 6px 6px; padding-left: 10px; border-left: 2px solid var(--mods-line); }
+.mods-disabled { opacity: .5; }
+.mods-dim .mods-field, .mods-dim .mods-adv { opacity: .55; }
+.mods-status { margin: -4px 0 10px; }
+.mods-absent, .mods-note { margin: 4px 0; opacity: .8; line-height: 1.4; }
+.mods-error { margin: 8px 0 0; color: var(--mods-error); }
+.mods-block { margin: 6px 0 4px; }
+.mods-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.mods-label { min-width: 150px; }
+.mods-pill { border: 1px solid var(--mods-field-line); background: transparent; color: inherit; border-radius: 14px; padding: 3px 14px; cursor: pointer; font: inherit; }
+.mods-pill.on { background: var(--mods-accent); color: var(--mods-accent-fg); border-color: transparent; }
+.mods-pill.ghost { cursor: default; opacity: .55; }
+.mods-pill.ghost.on { opacity: 1; }
+.mods-link { background: none; border: 0; color: var(--mods-accent); cursor: pointer; padding: 0; font: inherit; }
+.mods-link:hover { text-decoration: underline; }
+.mods-field { display: grid; grid-template-columns: 170px 1fr 90px; align-items: center; gap: 10px; margin: 6px 0; }
+.mods-range { width: 100%; accent-color: var(--mods-accent); }
+.mods-num { display: flex; align-items: baseline; gap: 4px; justify-content: flex-end; }
+.mods-num input { width: 54px; background: var(--mods-field-bg); color: inherit; border: 1px solid var(--mods-field-line); border-radius: 4px; padding: 2px 4px; text-align: right; font: inherit; }
+.mods-num em { font-style: normal; opacity: .7; min-width: 18px; }
+.mods-adv { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--mods-line); }
+.mods-meters { margin: 12px 0 4px; }
+.mods-meter { display: grid; grid-template-columns: 120px 1fr 80px; align-items: center; gap: 10px; margin: 4px 0; font-size: 12px; }
+.mods-meter-track { height: 8px; border-radius: 4px; background: var(--mods-track); overflow: hidden; }
+.mods-meter-fill { height: 100%; border-radius: 4px; transition: width .08s linear; background: var(--mods-accent); }
+.mods-meter-fill.in { background: var(--mods-ok); }
+.mods-meter-fill.gr { background: var(--mods-warn); }
+.mods-meter-fill.lg { background: var(--mods-info); }
+.mods-meter-v { text-align: right; font-variant-numeric: tabular-nums; opacity: .85; }
+.mods-icon { display: inline-flex; align-items: center; }
+.mods-deco { margin-left: 6px; font-size: 11px; opacity: .8; white-space: nowrap; }
+.mods-modal { padding: 24px; color: var(--mods-fg); }
+@media (max-width: 700px) { .mods-field { grid-template-columns: 1fr; } }
