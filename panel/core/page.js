@@ -320,6 +320,7 @@
   core.open = (id, tab) => {
     want = { id: id || null, tab: tab || null };
     if (id && tab) tabMemory.set(id, tab);
+    if (shown && !id && query) { shown.search.value = query = ''; }   // open() = the full overview, not a stale search
     if (shown && A.route().fullPath.includes(KEY)) { applyWant(); return true; }
     return A.openSettings(KEY);
   };
