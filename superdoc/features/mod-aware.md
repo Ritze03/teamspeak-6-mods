@@ -26,7 +26,7 @@ budget. The idle probe needs its own explicit opt-in.
 
 ### Talking in other channels (talk circles)
 For a client in another channel, the client row's own talk circle (the stock talking arcs around the avatar) is switched on while
-that client's polled idle time is 0 s, the same look the stock client shows for people in your own channel. Nothing is added to
+that client was recently active by its polled idle time (below), the same look the stock client shows for people in your own channel. Nothing is added to
 channel rows.
 **Why (user decision):** the earlier channel-row badge (a pill / green dot at the end of the channel row) sat on top of channel
 banner images and over the row's expand chevron. The user wanted no badge on channels; instead "fake that I'm in there": colour
@@ -36,16 +36,25 @@ polled idle time (0 s right after any activity) is the only available proxy.
 - Which rows: client rows rendered right now (the tree is a virtual list, so on-screen rows of expanded channels), not myself, not
   in my channel, and not flagged talking by the client itself. A row the client already shows as talking (own channel, a whisper
   to me) is never touched.
-- When: the last answer said idle < 1000 ms, and that answer is younger than `2 x interval + 1 s` (HOLD). A newer answer with
-  idle >= 1 s turns it off at once. Every other tick a client shown as talking that was asked at least one tick ago is asked
-  again first, so a mark is confirmed or cleared within about one to two intervals.
+- When: the last answer's idle time, extrapolated to now (`answer.ms` + age of the answer), is below `LIT` = 1 s + one request
+  interval (`panel/mods/aware/index.js:talkingNow`). A newer answer with a larger idle time turns it off at once. Every other tick
+  a client shown as talking that was asked at least one tick ago is asked again first, so a mark is confirmed or cleared within
+  about one to two intervals.
+- Why this threshold (live finding): idle time on the real server is exact in ms, grows 1:1 and drops to a few hundred ms after
+  activity, so the signal itself works. But with `N` candidate rows each client is asked only every `N` ticks, and the first
+  version (idle < 1 s in the answer, shown for `2 x interval + 1 s`) needed the request to land inside a 1 s window after
+  the activity: observed answers were 632 ms, 399 ms and 1405 ms after short bursts, so a burst was often missed (1405 ms)
+  or lit for about a second only. One interval more in the window means any activity between two looks is seen when the
+  client is asked, at the price of a circle that stays on for up to one interval after someone stopped. Idle time is the only
+  proxy; a longer window would show people who stopped long ago. Not verified live: that voice (not only typing) resets idle
+  time on every server (no talker in another channel was on screen); TS3 servers are expected to count voice as activity.
 - Mark: the stock class `talking` on the row's icon stack (the stock CSS then shows the talking arcs in the theme's colour, so
   default and extension themes look exactly like a real talker) plus our own marker class `aware-talk`, so only our additions
   are removed again (`panel/core/x-aware.js:markTalking`). Vue rewrites the class attribute only when its own class string
   changes, and recycled rows keep stale classes, so the marks are re-synced on tree DOM changes, on talk / move / property
   events, after every answer and once a second (local only).
-- Limits: a mark shows up to one interval late (or not at all when the client is asked only after its idle passed 1 s: with N
-  candidate rows on screen each one is asked about every N intervals) and lasts up to HOLD after the activity; it also lights for
+- Limits: a mark shows up to one interval late (or not at all when the client is asked only after its idle passed LIT: with N
+  candidate rows on screen each one is asked about every N intervals) and lasts up to LIT after the activity; it also lights for
   typing a message or any other action that resets idle time, not only for voice. A muted user who types also lights up (the
   stock CSS still draws the arcs). With the default 5 s interval and many users on screen it is coarse; a smaller interval (down
   to 1 s) gives faster circles at a higher request rate. Off-screen rows are never asked for this feature.

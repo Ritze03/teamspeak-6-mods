@@ -25,16 +25,18 @@ ts6mod.register({
     const dur = s => (s >= 3600 ? Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm' : s >= 60 ? Math.floor(s / 60) + 'm' : Math.floor(s) + 's');
 
     /* ---------- 1. talking in other channels (from idle time) ---------- */
-    // The client only learns the talk status of people in its own channel. For the others, an idle time below 1 s in the last answer
-    // means they just talked (or typed: any activity resets it); their stock talk circle is shown as talking until HOLD runs out or a
-    // newer answer says otherwise. HOLD covers two request intervals, the time until a "hot" client is asked again (see poll()).
-    const HOLD = c => 2 * tickMs(c) + 1000;
+    // The client only learns the talk status of people in its own channel. For the others, the polled idle time says when they last did
+    // anything (voice, typing, any action resets it). Their stock talk circle is shown as talking while that last activity is younger
+    // than LIT: the idle time extrapolated to now (answer + its age) is below 1 s plus one request interval. A client is asked only
+    // every few intervals, so a window of just 1 s would catch almost nothing; one interval more makes any activity since the last
+    // look light up (see the doc, "Why this threshold").
     const tickMs = c => Math.max(1, c.idleInterval) * 1000;
-    const talkingNow = (s, schid, id) => { const a = s.aware.answer(schid, id); return !!a && a.ms < 1000 && Date.now() - a.at < HOLD(cfg()); };
+    const LIT = c => 1000 + tickMs(c);
+    const talkingNow = (s, schid, id) => { const a = s.aware.answer(schid, id); return !!a && a.ms + (Date.now() - a.at) < LIT(cfg()); };
     let marks = null;   // {sync} of the running talk feature
     function talk(s) {
       marks = s.aware.markTalking((schid, id) => talkingNow(s, schid, id));
-      s.interval(() => marks && marks.sync(), 1000);   // a mark ends when HOLD runs out (local only, no requests)
+      s.interval(() => marks && marks.sync(), 1000);   // a mark ends when LIT runs out (local only, no requests)
       s.aware.cleanup(() => { marks = null; });
     }
 
@@ -131,7 +133,7 @@ ts6mod.register({
     const sl = (key, label, min, max, step, unit, help, feature) => ui.slider({ label, min, max, step, unit, value: c[key], help, onCommit: v => set(key, v, feature), onInput: v => set(key, v, feature) }).el;
     box.append(
       ui.section('Talking in other channels',
-        tgl('talk', 'Show talking in other channels (from idle time)', 'The client only knows who talks in your own channel. For users in other channels whose row is on screen, an idle time of 0 s turns their talk circle on, as if you were in that channel. Shows up to two request intervals late, and also for typing or other activity.')),
+        tgl('talk', 'Show talking in other channels (from idle time)', 'The client only knows who talks in your own channel. For users in other channels whose row is on screen, activity within the last second plus one request interval (idle time polled from the server) turns their talk circle on, as if you were in that channel. Shows up to one interval late, and also for typing or other activity.')),
       ui.section('Idle times',
         tgl('idle', 'Idle probe (polls the server)', 'Shows "idle 12m" next to users of expanded channels. Idle time only exists as the answer to a per-user request.'),
         sl('idleInterval', 'Seconds between requests', 1, 60, 1, 's', 'Shared by talking and idle times: one request in total per interval, to the user asked longest ago. Both off = no requests at all.', 'poll'),
