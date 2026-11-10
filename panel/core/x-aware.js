@@ -42,9 +42,9 @@
         const c = a.openConnection({ address: '127.0.0.1', port, nickname: nick, phonetic_nickname: '', identity: '', server_password: '', default_channel: '/', default_channel_password: '', default_channel_id: '0', sound_pack: '', show_serverquery_clients: false, send_mytsid: true, announce_to_chat: false, connect_muted: false, connectTime: 0 });
         a.showItem(c); return true;
       },
-      status() { const c = live(); return c ? { id: c.serverConnectionHandler.ownClientId, schid: c.serverConnectionHandler.id } : null; },
+      status() { const c = live(); if (!c) return null; const h = c.serverConnectionHandler, me = [...h.GetFlatListClients()].find(x => x.id === h.ownClientId); return { id: h.ownClientId, schid: h.id, nick: me ? (me.nickname || (me.properties && me.properties.nickname) || '') : '' }; },
       channels() { const c = live(); return c ? [...c.serverConnectionHandler.GetFlatListChannels()].map(x => ({ id: String(x.id), name: x.properties.name })) : []; },
-      move(cid) { const h = live().serverConnectionHandler; return new Promise(r => tsclient_internal.requestClientMove(h.id, [h.ownClientId], String(cid), '', s => r(s))); },
+      move(cid) { const h = live().serverConnectionHandler; tsclient_internal.requestClientMove(h.id, [h.ownClientId], String(cid), '', () => {}); return true; },   // fire and forget too: a CDP-awaited bridge promise gets collected
       disconnect() { const was = !!live(); for (const c of ac().connections.slice()) { const h = c.serverConnectionHandler; if (h && h.connectionStatus !== 0) tsclient_internal.stopConnection(h.id, 'bye', () => {}); setTimeout(() => ac().closeConnection(c), 1500); } return was; },   // fire and forget: awaiting the callback loses the CDP promise
     };
     return true;

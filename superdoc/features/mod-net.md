@@ -11,6 +11,7 @@ Built on [ts6-mod-api.md](ts6-mod-api.md); files: `panel/mods/net/` (`index.js`,
 - **HUD** (`index.js:enable`): an element added with `api.topBar.add(element)`; shows `<ping> ms`, `<loss> %` and, if enabled,
   `↓in ↑out` per second (short units to fit the narrow toolbar). Hidden while not connected. Ping turns warning-coloured over
   the ping limit, loss error-coloured over the loss limit (the limits are the alert limits, also with alerts off).
+  In a narrow toolbar the HUD shrinks and the data rate wraps onto a clipped second line instead of spilling under the next pane.
 - **Popover**: body-level fixed node under the HUD (a clipping toolbar cannot cut it). Opens on click or Enter/Space, closes on
   Escape, outside click, disconnect or disable. Contains: sparkline (ping line, loss bars, dashed ping-limit line, last 60 s),
   ping now + jitter, ping min/avg/max, loss now (up/down) and avg/max, bandwidth, codec, channel, buttons.

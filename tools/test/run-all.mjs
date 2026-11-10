@@ -17,8 +17,17 @@
 //   ctx.openModsPage() / ctx.restoreRoute()   navigate to the Mods settings page / back to where the test started
 //   ctx.pressEscape()         trusted Escape key (closes menus/popups that ignore synthetic events)
 //   ctx.sleep(ms), ctx.log(text), ctx.trace()  (core diagnostics), ctx.controlPort, ctx.cdpPort, ctx.cdp (raw CDP client)
+//   ctx.onTestServer()        true only when every connection of the client goes to the LOCAL test server (127.0.0.1 / localhost).
+//                             Gate EVERY server-side action on it (messages, joins/moves, channel creation, serverquery, uploads,
+//                             pokes, mutes that reach the server): the suite also runs against the user's real client and server.
+//   ctx.clientProfile()       {configDir, isolated}: the config dir of the client under test (from its process environment);
+//                             isolated = not the user's real ~/.config, i.e. a TS6MOD_PROFILE_DIR client. Never write a real profile.
+//   ctx.skip(part, reason)    print a SKIP line for a part of the test that cannot run on this client (does not fail the test)
+// Side effects of the run itself are put back at the end: mod switches (in memory), the persisted mods blob, route, window size
+// override, clipboard text.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { connect } from '../cdp/cdp.mjs';
@@ -43,8 +52,35 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 /* ---------- connect ---------- */
 let cdp;
 try { cdp = await connect(cdpPort); } catch (e) { line('FAIL', `connect to the client (CDP port ${cdpPort})`, String(e.message || e)); console.log(`\n${out.pass} passed, ${out.fail} failed, ${out.skip} skipped`); process.exit(1); }
-const ev = async expr => cdp.eval(expr);
+const ev = async expr => { try { return await cdp.eval(expr); } catch (e) { throw new Error(`${e.message || e} (in: ${String(expr).replace(/\s+/g, ' ').slice(0, 90)})`); } };
 const waitFor = async (expr, msg, ms = 5000) => { const t0 = Date.now(); for (;;) { let v = false; try { v = await ev(expr); } catch (e) { /* page busy */ } if (v) return; if (Date.now() - t0 > ms) throw new Error('timeout: ' + msg); await sleep(100); } };
+
+/* the client under test: test server? isolated profile? (the safety gates of the tests) */
+const onTestServer = async () => !!(await ev(`(() => { const cs = __ts6mod.anchors.get('app.controller').connections || []; return cs.length > 0 && cs.every(c => c.connectInfo && /^(127\\.0\\.0\\.1|localhost|::1)$/.test(String(c.connectInfo.address))); })()`).catch(() => false));
+function clientProfile() {   // read HOME / XDG_CONFIG_HOME of the process that owns our CDP port
+  const real = join(homedir(), '.config');
+  try {
+    for (const pid of readdirSync('/proc').filter(n => /^\d+$/.test(n))) {
+      let cmd; try { cmd = readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0'); } catch (e) { continue; }
+      if (!cmd.includes(`--remote-debugging-port=${cdpPort}`)) continue;
+      const env = Object.fromEntries(readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0').filter(Boolean).map(l => l.split(/=(.*)/s).slice(0, 2)));
+      const configDir = env.XDG_CONFIG_HOME || (env.HOME ? join(env.HOME, '.config') : real);
+      return { configDir, isolated: configDir.replace(/\/+$/, '') !== real };
+    }
+  } catch (e) { /* no /proc */ }
+  return { configDir: null, isolated: false };   // unknown: treat as the real profile
+}
+const profile = clientProfile();
+console.log(`        client: CDP ${cdpPort}, ${profile.isolated ? 'isolated profile' : 'REAL profile (file-writing parts are skipped)'}, ${(await onTestServer()) ? 'local test server' : 'not the local test server (server-side parts are skipped)'}`);
+
+/* clipboard text: some tests copy into it (copy-ID menu, diagnostics); put the user's text back at the end */
+let clip0 = null;
+try {
+  await cdp.send('Browser.grantPermissions', { permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'], origin: 'tsui://default' }).catch(() => {});
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  clip0 = await ev(`navigator.clipboard.readText().catch(() => null)`);
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+} catch (e) { clip0 = null; }
 
 // a fresh client window is 300x400, which collapses the sidebar/tree: emulate 1280x800 for the run, cleared at the end
 let emulated = false;
@@ -57,7 +93,7 @@ const origRoute = await ev('__ts6mod.route().fullPath').catch(() => null);
 if (reload) {
   try {
     await ev(buildBundle({ examples, replace: true }));
-    await waitFor('window.__ts6mod && window.__ts6mod.started', 'framework started after reload', 30000);
+    await waitFor('window.__ts6mod && window.__ts6mod.started && window.__ts6mod.ready !== false', 'framework started after reload', 30000);
   } catch (e) { line('FAIL', 'hot-load panel code from disk', String(e.message || e)); }
 } else if (examples) {   // keep the live core, just add the examples
   const { buildLoadScript } = await import('../cdp/bundle.mjs');
@@ -88,13 +124,16 @@ if (loadErrors.length) for (const le of loadErrors) line('FAIL', `mod ${le.id} f
 
 /* ---------- 4 mod tests ---------- */
 const initial = await ev(`Object.fromEntries(__ts6mod.list().map(m => [m.id, m.enabled]))`);
+// the persisted mods blob: tests change mod settings through api.storage (which saves the whole store), so it is put back at the end
+const blob0 = await ev(`__ts6mod.anchors.bridge.getBlob('mods')`).catch(() => undefined);
 let startRoute = await ev('__ts6mod.route().fullPath');
 if (startRoute.includes('TS6Mods') || startRoute.startsWith('/dashboard')) { startRoute = '/'; await ev(`__ts6mod.goto('/')`); await sleep(500); }   // the Mods page itself must not be the starting point
 function makeCtx(name) {
   const touched = new Set();
   const c = {
-    cdp, cdpPort, controlPort, sleep, waitFor, eval: ev,
+    cdp, cdpPort, controlPort, sleep, waitFor, eval: ev, onTestServer, clientProfile: () => profile,
     log: t => console.log('        ' + t),
+    skip: (part, reason) => line('SKIP', `${name}: ${part}`, reason),
     assert(cond, msg) { if (!cond) throw new Error('assert: ' + msg); },
     equal(actual, expected, msg) { if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`assert: ${msg} (got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)})`); },
     async enable(id) { touched.add(id); const on = await ev(`__ts6mod.setEnabled(${JSON.stringify(id)}, true, {persist: false})`); const err = await ev(`(__ts6mod.list().find(m => m.id === ${JSON.stringify(id)}) || {}).error`); if (!on) throw new Error(`mod ${id} did not enable: ${err}`); },
@@ -118,7 +157,7 @@ for (const m of listMods({ examples })) {
   const f = join(m.dir, 'test.mjs'); if (existsSync(f)) files.push({ id: m.id, kind: m.source, f }); else line('SKIP', `${m.source} ${m.id}`, 'no test.mjs');
 }
 for (const { id, kind, f } of files) {
-  const { c, touched } = makeCtx(id), name = `${kind} ${id}`;
+  const name = `${kind} ${id}`, { c, touched } = makeCtx(name);
   try { const fn = (await import(pathToFileURL(f).href)).default; if (typeof fn !== 'function') throw new Error('test.mjs has no default export function'); await fn(c); line('PASS', name); }
   catch (e) { line('FAIL', name, String(e.message || e)); }
   finally {   // put everything back as it was before this test
@@ -163,8 +202,19 @@ try {
   for (const [id, was] of Object.entries(initial)) if (was) await ev(`__ts6mod.setEnabled(${JSON.stringify(id)}, true, {persist: false})`).catch(() => {});
 } catch (e) { line('FAIL', 'vanilla check', String(e.message || e)); }
 
+if (blob0 !== undefined) {   // after any debounced save (250 ms) has fired; the in-memory store is put back too, in place
+  await sleep(500);
+  const restored = await ev(`(async () => { const b0 = ${JSON.stringify(blob0)}; if (await __ts6mod.anchors.bridge.getBlob('mods') === b0) return 'same';
+    const o = b0 ? JSON.parse(b0) : {}, st = __ts6mod.store(); st.enabled = o.enabled || {}; st.settings = o.settings || {};
+    await __ts6mod.anchors.bridge.saveBlob('mods', b0 || JSON.stringify(st)); return 'restored'; })()`).catch(e => 'failed: ' + e.message);
+  if (restored !== 'same') console.log(`        mods blob changed by the tests: ${restored}`);
+}
 if (origRoute) await ev(`__ts6mod.goto(${JSON.stringify(origRoute)})`).catch(() => {});
-if (emulated) await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {});
+if (emulated) await cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => {});   // tests must not set their own override (run-all owns it)
+if (clip0 !== null) {
+  try { await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true }); await ev(`navigator.clipboard.writeText(${JSON.stringify(clip0)}).then(() => 1, () => 0)`); } catch (e) { /* best effort */ }
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {});
+}
 cdp.close();
 console.log(`\n${out.pass} passed, ${out.fail} failed, ${out.skip} skipped`);
 process.exit(out.fail ? 1 : 0);

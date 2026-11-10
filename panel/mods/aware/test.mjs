@@ -1,7 +1,10 @@
 // aware mod test. Needs the shared local test server. The join/leave feed part needs a SECOND plain client on CDP port
 // $AWARE_P2_CDP (default 9263), already running (it is connected and disconnected by this test); without it that part is skipped.
 // Channels "aware-a"/"aware-b" are created through serverquery (creds file $AWARE_QUERY_CREDS, default $HOME/tmp/ts6-modsrv/creds.env)
-// when missing. Test procedure: superdoc/features/mod-aware.md.
+// when missing. The feed part (second client, serverquery) runs ONLY on the local test server (ctx.onTestServer()); a second client that
+// was connected before is connected again afterwards (same nickname), so later tests still find it. Elsewhere the test is read-only:
+// talk events are simulated locally; the idle probe sends requestConnectionInfo (a read-only query the client also sends for its own
+// client-info view). Test procedure: superdoc/features/mod-aware.md.
 import { connect } from '../../../tools/cdp/cdp.mjs';
 import { createConnection } from 'node:net';
 import { readFileSync } from 'node:fs';
@@ -23,7 +26,8 @@ function query(cmds) {   // raw serverquery, one connection, resolves with the w
 export default async function (ctx) {
   const set = o => ctx.eval(`(__ts6mod.store().settings.aware = ${JSON.stringify(o)}, 1)`);   // in-memory settings, never saved
   const cleanupSettings = () => ctx.eval('(delete __ts6mod.store().settings.aware, 1)');
-  let p2 = null;
+  let p2 = null, p2Restore = null;
+  const p2e = async x => { try { return await p2.eval(x); } catch (e) { throw new Error(`second client: ${e.message} (in: ${x.slice(0, 60)})`); } };
   try {
     await ctx.disable('aware');
     if (!(await ctx.eval(`__ts6mod.anchors.tree.rows('channel').length`))) { await ctx.eval('__ts6mod.showOwnChannelChat()'); }   // a view with the channel tree
@@ -41,8 +45,11 @@ export default async function (ctx) {
     ctx.equal(await requests(ctx), R0, 'idle probe off: no requestConnectionInfo calls with the mod on');
 
     /* ---- activity badges: talking count, then a fading "recent" dot ---- */
-    const info = await ctx.eval(`__awApi.state.clients({all: true}).filter(c => !c.self).map(c => ({id: c.id, ch: c.channelId}))`);
-    ctx.assert(info.length >= 1, 'at least one other client is on the server');
+    // another client whose channel row is rendered right now (the tree is a virtual list: off-screen rows carry no badge)
+    const shown = await ctx.eval(`__ts6mod.anchors.tree.rows('channel').map(r => String(r.model.id))`);
+    const info = (await ctx.eval(`__awApi.state.clients({all: true}).filter(c => !c.self).map(c => ({id: c.id, ch: c.channelId}))`)).filter(c => shown.includes(String(c.ch)));
+    if (!info.length) ctx.skip('activity badges', 'no other client in a channel whose row is on screen');
+    else {
     const c1 = info[0].id;
     const rowsOf = () => ctx.eval(`[...document.querySelectorAll('${BADGE}')].map(b => b.className + '|' + b.textContent)`);
     const before = (await rowsOf()).filter(x => x.includes('talking')).length;   // real talkers may exist on the shared server
@@ -60,6 +67,7 @@ export default async function (ctx) {
     await ctx.waitFor(`document.querySelector('${ROW}')`, 'this channel keeps a badge after the talk stopped');
     await ctx.sleep(1300);
     ctx.assert(await ctx.eval(`(() => { const b = document.querySelector('${ROW}'); return !b || b.classList.contains('talking') || +b.style.opacity < 0.95; })()`), 'recent dot fades (opacity falls) or is gone');
+    }
 
     /* ---- idle probe ON: one request per tick, only for clients in expanded channels ---- */
     await set({ idle: true, idleInterval: 1, idleMin: 0, fade: 2 });
@@ -81,31 +89,34 @@ export default async function (ctx) {
     ctx.equal(await ctx.eval(`document.querySelectorAll('.aware-idle').length`), 0, 'idle labels removed with the probe');
 
     /* ---- join / leave feed with a second client ---- */
-    try { p2 = await connect(+(process.env.AWARE_P2_CDP || 9263)); } catch (e) { p2 = null; }
-    if (!p2) ctx.log('SKIPPED feed part: no second client on CDP ' + (process.env.AWARE_P2_CDP || 9263));
+    const local = await ctx.onTestServer();
+    if (local) { try { p2 = await connect(+(process.env.AWARE_P2_CDP || 9263)); } catch (e) { p2 = null; } }
+    if (!local) ctx.skip('join/leave feed', 'drives a second client and serverquery: local test server only');
+    else if (!p2) ctx.skip('join/leave feed', 'no second client on CDP ' + (process.env.AWARE_P2_CDP || 9263));
     else {
       const drv = await ctx.eval('__ts6modBoot.aware.p2Driver');
-      await p2.eval(drv);
-      if (await p2.eval('window.__awareP2.status()')) { await p2.eval("window.__awareP2.disconnect()"); await ctx.sleep(5000); }
+      await p2e(drv);
+      const was = await p2e('window.__awareP2.status()');
+      if (was) { p2Restore = was.nick; await p2e("window.__awareP2.disconnect()"); await ctx.sleep(5000); }
       const nick = 'AwT' + Math.floor(Math.random() * 1e4);
       const n0 = (await entries(ctx)).length;
-      await p2.eval(`window.__awareP2.connect(${JSON.stringify(nick)}, 9990)`);
+      await p2e(`window.__awareP2.connect(${JSON.stringify(nick)}, 9990)`);
       const t0 = Date.now(); let st = null;
-      while (Date.now() - t0 < 20000 && !(st = await p2.eval('window.__awareP2.status()'))) await ctx.sleep(500);
+      while (Date.now() - t0 < 20000 && !(st = await p2e('window.__awareP2.status()'))) await ctx.sleep(500);
       ctx.assert(st, 'second client connected');
-      let chans = await p2.eval('window.__awareP2.channels()');
+      let chans = await p2e('window.__awareP2.channels()');
       if (!chans.some(c => c.name === 'aware-a') || !chans.some(c => c.name === 'aware-b')) {
         await query(['channelcreate channel_name=aware-a channel_flag_permanent=1', 'channelcreate channel_name=aware-b channel_flag_permanent=1']); await ctx.sleep(1500);
-        chans = await p2.eval('window.__awareP2.channels()');
+        chans = await p2e('window.__awareP2.channels()');
       }
       const A = chans.find(c => c.name === 'aware-a'), B = chans.find(c => c.name === 'aware-b');
       ctx.assert(A && B, 'channels aware-a / aware-b exist');
       await ctx.waitFor(`window.__awProbe.entries().some(e => e.nick === ${JSON.stringify(nick)} && e.kind === 'join')`, 'feed shows the join', 6000);
-      await p2.eval(`window.__awareP2.move('${A.id}')`);
+      await p2e(`window.__awareP2.move('${A.id}')`);
       await ctx.waitFor(`window.__awProbe.entries().some(e => e.nick === ${JSON.stringify(nick)} && e.kind === 'move' && e.to === 'aware-a')`, 'feed shows the move into aware-a', 6000);
-      await p2.eval(`window.__awareP2.move('${B.id}')`);
+      await p2e(`window.__awareP2.move('${B.id}')`);
       await ctx.waitFor(`window.__awProbe.entries().some(e => e.nick === ${JSON.stringify(nick)} && e.kind === 'move' && e.from === 'aware-a' && e.to === 'aware-b')`, 'feed shows the move aware-a -> aware-b', 6000);
-      await p2.eval('window.__awareP2.disconnect()');
+      await p2e('window.__awareP2.disconnect()');
       await ctx.waitFor(`window.__awProbe.entries().some(e => e.nick === ${JSON.stringify(nick)} && e.kind === 'disconnect')`, 'feed shows the disconnect', 8000);
       const mine = (await entries(ctx)).filter(e => e.nick === nick).map(e => e.kind + ':' + (e.from || '') + '>' + (e.to || ''));
       ctx.log('feed entries: ' + mine.join(' | '));
@@ -128,7 +139,16 @@ export default async function (ctx) {
     ctx.equal(await requests(ctx), R5, 'mod off (even with the idle probe configured on): no requests');
     ctx.equal(await ctx.eval(`document.querySelectorAll('.aware-pop, .aware-badge, .aware-idle').length`), 0, 'no badges / popup / idle labels left');
   } finally {
-    if (p2) { try { await p2.eval('window.__awareP2 && window.__awareP2.disconnect()'); } catch (e) { /* gone */ } p2.close(); }
+    if (p2) {
+      try { await p2e('window.__awareP2 && window.__awareP2.disconnect()'); } catch (e) { /* gone */ }
+      if (p2Restore) {   // the second client was connected before this test: connect it again for the tests that follow
+        try {
+          await ctx.sleep(2500); await p2e(`window.__awareP2.connect(${JSON.stringify(p2Restore)}, 9990)`);
+          for (let i = 0; i < 40 && !(await p2e('window.__awareP2.status()')); i++) await ctx.sleep(500);
+        } catch (e) { ctx.log('could not reconnect the second client: ' + e.message); }
+      }
+      p2.close();
+    }
     await ctx.eval(`(window.__ts6modBoot && __ts6modBoot.aware.setCollapsed(false), __ts6mod.unregister && __ts6mod.unregister('t-aware-probe'), delete window.__awProbe, 1)`).catch(() => {});
     await cleanupSettings().catch(() => {});
   }

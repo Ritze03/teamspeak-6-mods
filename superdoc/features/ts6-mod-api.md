@@ -58,7 +58,7 @@ Status column: all slots below were run against the live client by `tools/test/c
 |---|---|---|---|
 | `api.topBar.add({title, icon, onClick, active})` or `add(element)` | button in the top bar next to mic/speaker; `active` bool or fn, `update(patch)` re-evaluates | wrap the `buttons` computed getter of the central toolbar component; element form appends the node to the toolbar | yes (spec form); element form not separately |
 | `api.sidebar.addIcon({title, icon, onClick, active})` | button in the left icon column (several allowed, in registration order); `active` bool or fn, re-evaluated on every route change | own Vue block built from the column's markup + `<ts-icon>`, placed behind the last stock group, restored by a shared DOM observer | yes |
-| `api.contextMenu.client.add({label, icon, onClick(target), visible(target)})` / `.channel.add(...)` | item in the right-click menu of client / channel rows (section "Mods"); `target = {kind, id, schid, name, model}` | `$watch('data')` on the context-menu container + last right-clicked row | yes |
+| `api.contextMenu.client.add({label, icon, onClick(target), visible(target)})` / `.channel.add(...)` | item in the right-click menu of client / channel rows (section "Mods"); `target = {kind, id, schid, name, model}`. `icon` must be a TS icon name (`'item-copy'`, `'settings-addons'`); an unknown or empty name falls back to `'settings-addons'` | `$watch('data')` on the context-menu container + last right-clicked row | yes |
 | `api.contextMenu.server.add(...)` | **unsupported, throws** a clear error: the server entry has no context menu of its own (probed; a synthetic right-click on the sidebar header and root row opens nothing) | - | yes (throws) |
 | `api.treeRow.decorate({for:'client'\|'channel', render(model)})` -> `{remove}` | inline marker at the end of every matching row; `render` returns string / Node / null; re-rendered on talk/property/move events; rows are recycled, markers keyed by model id | debounced DOM observer + `row.__vue__.$props.data` | yes |
 | `api.treeRow.refresh()` | re-render all decorations now | - | yes (via events) |
@@ -67,7 +67,7 @@ Status column: all slots below were run against the live client by `tools/test/c
 | `api.toast(title, text, opts?)` | local notification (notification center + bell) | `createGlobalNotification(plainObject)`; removed by tag on disable. Whether a transient popup is drawn is not confirmed visually | yes (enters/leaves the notification center) |
 | `api.modal.show({title, render(container, close), onClose})` -> `{close()}` | the app's own modal overlay; closing on disable | `events.onInvokeModalOverlayEmitter.fire` | yes |
 | `api.settings.addSection({title, render(container, scopedApi)})` | extra titled block in this mod's area of the Mods page | page.js | yes |
-| `api.settings.addPage({key, title, icon, render(container, scopedApi)})` | a separate category in the client's Settings navigation | push into the Settings mode list + rebuild nav | yes |
+| `api.settings.addPage({key, title, icon, render(container, scopedApi)})` | a separate category in the client's Settings navigation; the container sits in the stock page frame (scroll area + readable width), so long pages scroll like stock ones | push into the Settings mode list + rebuild nav | yes |
 | `api.settings.open()` | open the Mods page | router | yes |
 | `api.events.on(name, cb)` | native -> UI events (`talkStatusChanged`, `clientMoved`, `textMessage`, ...) | one dispatcher per event name over `tsclient_internal.on` (it has no "off", so un-subscribing removes the callback from the dispatcher) | yes |
 | `api.bridge.call(name, ...args)` | promisified native bridge call: resolves with the value (an array if the callback carries more than one value), rejects with `error.status` on non-zero status. Methods without a callback (`saveJsonBlob`, `deleteJsonBlob`) are detected and called without one | `tsclient_internal[name]` | yes |
@@ -201,7 +201,17 @@ dependencies, against a running modded client; exit code 1 on any FAIL; SKIP doe
 
 Unless `--no-reload`, run-all first replaces the panel code in the page with the files on disk (same as `mods-reload.mjs`), so
 tests judge the repo, not what the injector loaded at start. Mod switches are changed in memory only (`persist:false`) and put
-back; the route is restored after every test; throw-away test mods (`t-*`) are removed.
+back; the route is restored after every test; throw-away test mods (`t-*`) are removed. Also put back at the end: the persisted
+`mods` blob (tests change settings through `api.storage`, which saves the whole store), the clipboard text and the window-size
+override (run-all owns it: a test never sets its own `Emulation.setDeviceMetricsOverride`).
+
+**Real client vs. test client.** run-all can run against the user's own client with no input and no side effect on the server:
+every part that reaches the server (chat messages, moves/joins, private chats, local mutes, a second client, serverquery,
+uploads) runs only when `ctx.onTestServer()` is true, and every part that writes files (theme edits) only when
+`ctx.clientProfile().isolated`. Skipped parts print `SKIP <test>: <part>  <reason>`. Why: an accidental full run against the
+real client once posted test messages and moved the user on a real server; the gates make that impossible instead of relying on
+care. The full coverage needs an isolated client (`TS6MOD_PROFILE_DIR`) connected to a local test server; see
+[test-rig.md](test-rig.md).
 
 **`test.mjs` contract:** `export default async function (ctx) { ... }`; throwing or a failed assert = FAIL. `ctx`:
 
@@ -215,6 +225,9 @@ back; the route is restored after every test; throw-away test mods (`t-*`) are r
 | `ctx.openModsPage()` / `ctx.restoreRoute()` | navigate to the Mods page / back to where the test started |
 | `ctx.pressEscape()` | trusted Escape key (closes menus that ignore synthetic events) |
 | `ctx.trace()` | core diagnostics: marked DOM, style/observer state, native request count, ledgers, extensions, slots, event subscriptions |
+| `ctx.onTestServer()` | true only when every connection is to 127.0.0.1 / localhost / ::1: gate every server-side action on it |
+| `ctx.clientProfile()` | `{configDir, isolated}` of the client process on `ctx.cdpPort` (from its environment); `isolated` = not the user's `~/.config`: gate every file write on it |
+| `ctx.skip(part, reason)` | print a SKIP line for a part of the test that cannot run here (does not fail) |
 | `ctx.controlPort`, `ctx.cdpPort`, `ctx.cdp`, `ctx.sleep(ms)`, `ctx.log(text)` | plumbing |
 
 Test files live inside `panel/mods/<name>/`, so they are covered by the lint: use `__ts6mod.*` (core diagnostics) and the mod's own
@@ -246,3 +259,12 @@ core first), then every `panel/mods/*/index.js` with its `style.css`, then `pane
 
 `node tools/cdp/mods-reload.mjs [--cdp-port N] [--examples] [--mod <id>]...` hot-swaps the panel code from disk into the running client
 (whole core + mods, or just the named mod directories); mods that were on stay on. Use it while developing a mod instead of restarting.
+
+Mechanics of a whole-core swap: `unload()` of the old core disables every mod, peels its composer hook and flushes a pending
+save, then leaves the ids of the mods that were on (in memory, so also `persist:false` ones) in `window.__ts6modCarry`; the new
+core's `start()` enables those instead of the persisted set. `__ts6mod.ready` turns true once `start()` enabled its mods.
+Why: a core replaced while its own `start()` was still awaiting used to enable mods into a dead core, which left its DOM, styles
+and composer hook behind (two HUDs, a message split twice after rapid reloads). Now `start()` and `enableRec` stop as soon as
+the core is unloaded, and the composer hook tags each wrapper with its core (`__ts6modLayer`) and peels layers of dead cores
+before wrapping (`anchors.chat.layers(vm)`, `chat.restoreAll()`). Test: core-tests "hot reload twice keeps exactly one
+composer hook layer".

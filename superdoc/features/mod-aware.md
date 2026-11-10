@@ -69,6 +69,8 @@ appear, none with all channels collapsed (test hook `setCollapsed`), none after 
 twice, disconnects: feed has the matching entries and the panel lists them; mod off: `assertClean`, 0 requests even with the
 probe configured on. Manual: talk with a second client (real mic) and watch the channel row; expand/collapse channels.
 Test support in the x-file: `p2Driver` is JS source evaluated in the second client (TS calls stay out of `panel/mods/`).
+Gating: the badge part uses another client in a channel whose row is on screen (else SKIP); the feed part (second client,
+serverquery, channel creation) runs only on the local test server, and the second client gets its original nick back at the end.
 
 ## Known limits
 Visual check needs the client window; fresh-profile clients show a full-screen account overlay (hide it in test clients).

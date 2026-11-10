@@ -47,16 +47,22 @@ sits at the link's position so it behaves the same.
 
 ## Test procedure
 
+Switching the theme from the picker re-measures the tree afterwards (400 ms and 1.2 s), because the client keeps the old theme's
+row heights cached and rows overlap until a restart otherwise (seen switching graphite -> default).
+
 Automatic: `TS6MOD_PROFILE_DIR=<profile> node tools/test/run-all.mjs --cdp-port <cdp> --control-port <ctl> --only theme`
 (`panel/mods/theme/test.mjs`). It copies the installed graphite theme from the real extensions folder (read-only source) into
 `<profile>/config/TeamSpeak/Default/extensions/`, edits **its copy** (tree row heights + a marker variable in the imported base file),
 and checks: off = no live style/timer; picker default <-> graphite; the Reload button; live reload (300 ms poll) applies
 28 -> 44 -> 34 px client row height and the marker without a restart, one live style only; switching to the default drops it;
-disable = `assertClean`, later file edits ignored. The copy is restored at the end.
+disable = `assertClean`, later file edits ignored. The copy is restored at the end. The file part runs only when
+`ctx.clientProfile().isolated` (the client process's config dir is not the user's own); against the real profile it is a SKIP and
+only the picker, Reload and live-reload-without-edit checks run, and the original theme is asserted at the end. The test never
+writes outside the isolated extensions folder (`restore()` refuses).
 Prerequisites: (1) the client must have been **started** with the themes already in the profile (it lists installed themes once at
 start): copy `~/.config/TeamSpeak/Default/extensions` into the profile before `launcher/ts6-mod`; (2) the client connected to a server
-and the window large enough to show the tree (the test sets a 1280x800 metrics override over CDP when the page is narrower; a fresh
-profile's window is tiny).
+and the window large enough to show the tree (run-all sets a 1280x800 metrics override over CDP when the page is narrower and clears
+it at the end; a fresh profile's window is tiny; the test no longer sets its own).
 Manual: Mods page -> Theme tools on; pick a theme; edit a theme file, hit "Reload theme now" (or enable live reload) and watch colours and
 tree rows change.
 

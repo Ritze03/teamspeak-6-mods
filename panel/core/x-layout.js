@@ -153,6 +153,7 @@
   window.__ts6modLayoutDev = {
     /* open up to n private chats (a first message makes the client list them as open chats); returns the number of open chats */
     async openChats(n) {
+      if (n > 0 && !A.get('app.connections').every(c => c.connectInfo && /^(127\.0\.0\.1|localhost|::1)$/.test(String(c.connectInfo.address)))) throw new Error('openChats sends messages: refused outside the local test server');
       const h = A.get('app.connections')[0].serverConnectionHandler, me = h.ownClient;
       const others = [...h.GetFlatListClients()].filter(c => c !== me && c.id !== me.id);
       others.sort((a, b) => (/^Layout/.test(b.nickname || b.name) ? 1 : 0) - (/^Layout/.test(a.nickname || a.name) ? 1 : 0));

@@ -1,6 +1,7 @@
 // Layout mod: chat tabs (open / switch / close, sidebar collapse + restore), server tabs, live row-height density, hide switches,
-// settings page, clean disable. Needs a connected server (run-all opens one); the chat part needs one other client on the server
-// (it sends "layout test" as a private message to up to two of them) and is skipped with a log line otherwise.
+// settings page, clean disable. Needs a connected server (run-all opens one). The chat part needs one other client on the server
+// and sends "layout test" as a private message to up to two of them, so it runs ONLY on the local test server (ctx.onTestServer());
+// on any other server it just checks that the chats that are already open get a tab each (nothing sent, opened or closed).
 export default async function (ctx) {
   const DEV = 'window.__ts6modLayoutDev';
   const probe = () => ctx.eval(`${DEV}.probe()`);
@@ -20,8 +21,12 @@ export default async function (ctx) {
     await ctx.waitFor(`document.querySelectorAll('.lay-strip').length === 1`, 'tab strip appears');
     await ctx.waitFor(`${DEV}.probe().sidebar === 62`, 'sidebar collapsed to its 62 px icon column');
     ctx.equal(await ctx.eval(`document.querySelectorAll('.lay-tab.server').length`), 0, 'no server tabs with the server switch off');
-    const n = await ctx.eval(`${DEV}.openChats(2)`);
-    if (n === 0) ctx.log('SKIP chat tab part: no other client on the server to chat with');
+    const local = await ctx.onTestServer();
+    const n = await ctx.eval(`${DEV}.openChats(${local ? 2 : 0})`);   // 0 = only count the open chats, send nothing
+    if (!local) {
+      if (n) await ctx.waitFor(`document.querySelectorAll('.lay-tab.chat').length === ${n}`, `one tab per already open chat (${n})`);
+      ctx.skip('opening, switching and closing chat tabs', 'needs private messages to other users: local test server only' + (n ? ` (the ${n} open chats got a tab each)` : ''));
+    } else if (n === 0) ctx.skip('chat tabs', 'no other client on the test server to chat with');
     else {
       await ctx.waitFor(`document.querySelectorAll('.lay-tab.chat').length === ${n}`, `one tab per open chat (${n})`);
       ctx.equal(await ctx.eval(`document.querySelectorAll('.lay-tab.chat.active').length`), 1, 'exactly one active tab');
@@ -87,18 +92,22 @@ export default async function (ctx) {
     /* ---- hide switches ---- */
     const keysServer = ['announce', 'hostBanner', 'transfer', 'createChannel', 'afk', 'join', 'bookmarks'], keysDash = ['dashStart', 'dashPopular', 'dashChats'];
     const hide = Object.fromEntries([...keysServer, ...keysDash].map(k => [k, true]));
+    // base = what the client (or the user's theme) already hides while the mod is off: "visible" means back to that, not "all shown"
+    let off0 = null;
     const check = async (keys, want, msg) => {
       const st = await ctx.eval(`${DEV}.hideState()`);
       let seen = 0;
       for (const k of keys) {
         if (st[k].n === 0) { ctx.log(`${k}: element not on screen here, not checked`); continue; }
-        seen++; ctx.equal(want ? st[k].hidden === st[k].n : st[k].hidden === 0, true, `${msg}: ${k} (${st[k].hidden}/${st[k].n} hidden)`);
+        if (!want && off0 && off0[k] && off0[k].hidden === off0[k].n) { if (msg.startsWith('visible while')) ctx.log(`${k}: already hidden by the client or theme while the mod is off, only the "hidden while on" check applies`); continue; }
+        seen++; ctx.equal(want ? st[k].hidden === st[k].n : st[k].hidden === ((off0 && off0[k] && off0[k].hidden) || 0), true, `${msg}: ${k} (${st[k].hidden}/${st[k].n} hidden)`);
       }
       return seen;
     };
     for (const [view, keys] of [['showServer', keysServer], ['showDashboard', keysDash]]) {
       await ctx.disable('layout');
       await ctx.eval(`${DEV}.${view}()`); await ctx.sleep(900);
+      off0 = await ctx.eval(`${DEV}.hideState()`);
       await check(keys, false, 'visible while off');
       await cfg({ hide });
       await ctx.enable('layout'); await ctx.sleep(300);

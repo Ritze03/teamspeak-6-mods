@@ -173,7 +173,9 @@ the original, mute lifted, overrides cleared). Why UID and not the native side: 
   master and mode switches through the real controls, all 11 parameter fields, the three built-in presets (values, "modified"), custom
   preset save/update/rename/delete, per-user popover (volume, mute, boost, bypass, custom param, no lookahead field, re-push after mod
   off/on, reset), cleanup. Safe on a real client: the master stays off while editing (the per-speaker hook is never installed by it),
-  nothing touches a server, and every value, record and local mute is restored. The per-user part needs another connected user.
+  nothing touches a server, and every value, record and local mute is restored. The per-user part needs another connected user
+  and runs only on the local test server (`ctx.onTestServer()`): the local mute goes through `requestSetClientsMute`, which
+  reaches the server.
 - Restart persistence (manual, isolated profile): set values through the controls, stop the client, start it again with the **same**
   `TS6MOD_PROFILE_DIR`, reconnect (hide the "Confirm your Account" overlay with an injected style if it appears), then compare panel,
   `GET /config` and `GET /speakers` (`override:true` on the user's **new** client id while they talk).

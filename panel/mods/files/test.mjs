@@ -1,6 +1,8 @@
 // Files mod: oversize images are compressed on every route (chat drop / paste / attach button, Files tab drop / upload button), everything else is
 // left alone, disable restores the stock behaviour and leaves no trace. Small generated fixtures + a 1 MB limit keep it fast; the real 16-45 MB
-// set is run by hand (superdoc/features/mod-files.md "Test procedure").
+// set is run by hand (superdoc/features/mod-files.md "Test procedure"). Nothing is ever uploaded or sent: chat attachments only reach the
+// composer's preview list and are cleared again (also when the test fails), the Files tab is a stand-in model. Without a displayed chat
+// composer the chat routes are skipped.
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { deflateSync, crc32 } from 'node:zlib';
 import { join } from 'node:path';
@@ -20,19 +22,25 @@ export default async function (ctx) {
   const dir = mkdtempSync(join(process.env.HOME || '.', 'tmp', 'ts6files-'));
   const cleanup = async () => { try { await ev(`${T}.removeFakeModel(); ${T}.dialogPaths = null; ${T}.clearPreviews(); ${T}.unforceChat(); delete __ts6mod.store().settings.files; 0`); } catch (e) { /* page gone */ } rmSync(dir, { recursive: true, force: true }); };
   try {
-    ctx.assert(await ev(`${T}.chatAvailable()`), 'a chat composer is displayed (run-all opens one)');
-    ctx.assert(await ev(`${T}.forceChat()`), 'composer accepts attachments (forced: a plain TS3 chat has no attach button)');
-    await ev(`${T}.clearPreviews(); 0`);
     const previews = () => ev(`${T}.previews()`);
     const waitPreviews = async (n, msg) => { for (let i = 0; i < 100; i++) { const p = await previews(); if (p.length >= n) return p; await ctx.sleep(150); } throw new Error('timeout: ' + msg); };
     const big = `${T}.makeFile({noise: {w: 1600, h: 1200}, name: 'big.png'})`;
+    await ev(`__ts6mod.showOwnChannelChat()`).catch(() => {});
+    let chat = false;
+    for (let i = 0; i < 30 && !chat; i++) { chat = await ev(`${T}.chatAvailable()`); if (!chat) await ctx.sleep(200); }
+    if (!chat) ctx.skip('chat routes (drop, paste, attach button)', 'no chat composer is displayed on this client');
+    else {
+    ctx.assert(await ev(`${T}.forceChat()`), 'composer accepts attachments (forced: a plain TS3 chat has no attach button)');
+    await ev(`${T}.clearPreviews(); 0`);
 
     /* ---- off: stock behaviour (the stock drop limit is 5 MB, so a 7 MB image is rejected, a 2 MB one is attached unchanged) ---- */
     await ev(`(async () => { const f = await ${big}; ${T}.dropOnChat([f]); return 0; })()`);
     await ctx.sleep(1200);
     ctx.equal((await previews()).length, 0, 'off: a 7 MB image is rejected by the stock drop limit, nothing attached');
 
+    }
     await ctx.enable('files');
+    if (chat) {
 
     /* ---- chat drop ---- */
     await ev(`(async () => { const f = await ${big}; window.__bigSize = f.size; ${T}.dropOnChat([f]); return 0; })()`);
@@ -104,6 +112,8 @@ export default async function (ctx) {
       await ev(`${T}.clearPreviews(); ${T}.dialogPaths = null; 0`);
     }
 
+    }   // chat routes
+
     /* ---- Files tab (stand-in model: same two methods the Files tab uses) ---- */
     await ev(`${T}.installFakeModel()`);
     await ctx.sleep(900);   // the DOM observer patches the new model
@@ -111,7 +121,9 @@ export default async function (ctx) {
     let calls = await ev(`${T}.fakeCalls()`);
     ctx.assert(calls[0].size <= LIM && calls[0].type === 'image/jpeg' && calls[0].name === 'big.jpg', 'Files tab drop: big image uploaded compressed (' + JSON.stringify(calls[0]) + ')');
     ctx.equal([calls[1].name, calls[1].type], ['tiny.png', 'image/png'], 'Files tab drop: small image uploaded unchanged');
-    if (reader === 'function') {
+    if (await ev(`typeof window.ts6modReadImage`) === 'function') {
+      const bigPath = join(dir, 'pick.png'), txtPath = join(dir, 'note.txt');
+      writeFileSync(bigPath, png(1500, 1100)); writeFileSync(txtPath, 'hello');
       await ev(`${T}.fakeCalls().length = 0; ${T}.dialogPaths = ${JSON.stringify([bigPath, txtPath])}; (async () => { await ${T}.fakePick(); return 0; })()`);
       await ctx.sleep(1500);
       calls = await ev(`${T}.fakeCalls()`);
@@ -123,9 +135,11 @@ export default async function (ctx) {
     await ev(`${T}.fakeCalls().length = 0; (async () => { await ${T}.fakeUpload(await ${big}); return 0; })()`);
     calls = await ev(`${T}.fakeCalls()`);
     ctx.assert(calls.length === 1 && calls[0].name === 'big.png' && calls[0].size > 5e6, 'off again: Files tab method restored (original 7 MB PNG passes through)');
-    await ev(`(async () => { ${T}.dropOnChat([await ${big}]); return 0; })()`);
-    await ctx.sleep(1200);
-    ctx.equal((await previews()).length, 0, 'off again: stock drop limit applies again');
+    if (chat) {
+      await ev(`(async () => { ${T}.dropOnChat([await ${big}]); return 0; })()`);
+      await ctx.sleep(1200);
+      ctx.equal((await ev(`${T}.previews()`)).length, 0, 'off again: stock drop limit applies again');
+    }
     await ctx.assertClean('files');
   } finally { await cleanup(); }
 }

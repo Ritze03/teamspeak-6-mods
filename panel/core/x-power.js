@@ -29,9 +29,14 @@
   const conns = () => (A.tryGet('app.connections') || []).filter(c => c && c.serverConnectionHandler);
   const handlerOf = schid => { const c = conns().find(c => String(c.serverConnectionHandler.id) === String(schid)); return c && c.serverConnectionHandler; };
   const serverName = c => { const h = c.serverConnectionHandler; let n = ''; try { n = h.properties && (h.properties.name || h.properties.virtualserverName) || ''; } catch (e) { /* not connected */ } return n || c.title || c.displayName || ('Server ' + h.id); };
-  function channelPath(ch) { const parts = [], Ch = ch.constructor; for (let c = ch, n = 0; c && c.constructor === Ch && n < 32; c = c.parent, n++) parts.unshift((c.properties && c.properties.name) || ('#' + c.id)); return parts.join(' / '); }
+  /* TS3 spacer channels carry their layout in the name ("[cspacer]Lobby", "[*spacer3]---"): show the text only; a spacer without text or
+   * a repeated fill ("[*spacer]") is decoration and not offered as a join target */
+  const SPACER = /^\[([lcr*]?)spacer[^\]]*\](.*)$/i;
+  const cleanName = raw => { const m = SPACER.exec(raw || ''); return m ? m[2].trim() : (raw || ''); };
+  const decorative = raw => { const m = SPACER.exec(raw || ''); return !!m && (m[1] === '*' || !m[2].trim()); };
+  function channelPath(ch) { const parts = [], Ch = ch.constructor; for (let c = ch, n = 0; c && c.constructor === Ch && n < 32; c = c.parent, n++) parts.unshift(cleanName(c.properties && c.properties.name) || ('#' + c.id)); return parts.join(' / '); }
   /* the top channel's parent is the server object (another class), so the walk stops there */
-  const channelRec = (h, ch) => ({ id: ch.id, schid: h.id, name: (ch.properties && ch.properties.name) || '', path: channelPath(ch), password: !!(ch.properties && ch.properties.flagPassword), current: !!(h.ownClient && h.ownClient.channel && h.ownClient.channel.id === ch.id) });
+  const channelRec = (h, ch) => ({ id: ch.id, schid: h.id, name: cleanName(ch.properties && ch.properties.name), decorative: decorative(ch.properties && ch.properties.name), path: channelPath(ch), password: !!(ch.properties && ch.properties.flagPassword), current: !!(h.ownClient && h.ownClient.channel && h.ownClient.channel.id === ch.id) });
 
   /* ---------- hidden developer toggles: where each lives in the app's settings objects ---------- */
   const DEV = [

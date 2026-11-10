@@ -1,6 +1,7 @@
 // Audio mod: the AGC page (master, mode, every parameter, built-in/custom presets), the vanilla rule (mod off = native AGC
 // off), the per-user popover (volume/mute/boost/AGC override, saved per UID, pushed to the native module) and cleanup.
-// Safe on a real client: no server actions; the native master switch stays OFF while modes/overrides are edited (so the
+// Safe on a real client: the per-user part (it mutes a user locally, which TeamSpeak sends to the server as a client mute request) runs
+// ONLY on the local test server (ctx.onTestServer()); the native master switch stays OFF while modes/overrides are edited (so the
 // per-speaker hook is never installed by this test); every native value, user record, preset and local mute is restored.
 // The per-user part is skipped when nobody else is connected; the native part when the control API is unreachable.
 export default async function (ctx) {
@@ -124,9 +125,12 @@ export default async function (ctx) {
     }
 
     // ---- per-user popover (needs another connected user and the native module)
-    if (nativeUp) {
+    const local = await ctx.onTestServer();
+    if (!local) ctx.skip('per-user popover (volume, mute, boost, AGC override)', 'the local mute reaches the server: local test server only');
+    else if (!nativeUp) ctx.skip('per-user popover', 'native control API not reachable');
+    if (nativeUp && local) {
       const peer = await ctx.eval(`(() => { const a = __ts6mod.mods().get('audio').api; const l = a.peers.list().filter(p => !p.self && p.uid); return l.find(p => p.nickname === 'AudT') || l[0] || null; })()`);
-      if (!peer) ctx.log('no other user connected: per-user popover part skipped');
+      if (!peer) ctx.skip('per-user popover', 'no other user connected');
       else {
         await ctx.eval(`(() => { const a = __ts6mod.mods().get('audio').api; window.__audPostOrig = a.native.post; window.__audPosts = []; a.native.post = (p, b) => { window.__audPosts.push([p, b]); return window.__audPostOrig.call(a.native, p, b); }; return 1; })()`);
         const lastOv = () => ctx.eval(`(() => { const p = window.__audPosts.filter(x => x[0] === '/speaker' && x[1].client_id === ${peer.id}); return p.length ? p[p.length - 1][1].override : undefined; })()`);

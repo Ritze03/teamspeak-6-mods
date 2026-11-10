@@ -1,8 +1,9 @@
 // Power mod: copy-ID menu entries (clipboard read back and compared to the real values), command palette (hotkey, fuzzy search,
 // keyboard, join a channel, open the Mods page), developer toggles section (explicit clicks only), clean disable.
 // Needs a connected client with at least one other client and one other channel on the server (else those parts are skipped
-// with a log line). Changes made: one benign developer toggle is flipped and flipped back; the own client joins another channel
-// and goes back to the channel it was in.
+// with a log line). Changes made: one benign developer toggle is flipped and flipped back; ONLY on the local test server
+// (ctx.onTestServer()) the own client joins another channel through the palette and goes back to the channel it was in. On any other
+// server the copy entries are read against an existing other client (read-only) and the join is skipped.
 export default async function (ctx) {
   const M = '[data-ts6mod="power"]', B = M + '.mods-mod-body', OV = M + '.power-overlay';
   const P = 'window.__pwr';
@@ -39,7 +40,7 @@ export default async function (ctx) {
       /* ---------- 1. copy menu ---------- */
       await ctx.eval(`${P}.test.showTree()`); await ctx.sleep(1500);
       const clients = await ctx.eval(`${P}.test.clients()`), other = clients.find(c => !c.self && c.uid);
-      if (!other) ctx.log('SKIP client copy test: no other client on the server');
+      if (!other) ctx.skip('client copy entries', 'no other client on the server');
       else {
         await ctx.waitFor(`${P}.test.hasRow('client', ${other.id})`, 'the other client\'s row is rendered', 10000);
         const titles = await ctx.eval(`${P}.test.openMenu('client', ${other.id})`);
@@ -56,12 +57,12 @@ export default async function (ctx) {
         ctx.equal(await readClip(), other.nickname, 'clipboard holds the nickname');
         await closeMenu();
       }
-      const chans = await ctx.eval(`${P}.channels()`);
-      if (chans.length) {
-        const ch = chans[0];
-        await ctx.waitFor(`${P}.test.hasRow('channel', ${ch.id})`, 'channel row rendered', 10000).catch(() => {});
+      // a channel whose row is rendered right now (the tree is a virtual list; spacer rows have no menu)
+      let ch = null;
+      for (let i = 0; i < 20 && !ch; i++) { ch = await ctx.eval(`${P}.channels().find(c => !c.decorative && ${P}.test.hasRow('channel', c.id)) || null`); if (!ch) await ctx.sleep(300); }
+      if (ch) {
         const titles = await ctx.eval(`${P}.test.openMenu('channel', ${ch.id})`).catch(() => null);
-        if (!titles) ctx.log('SKIP channel copy test: channel row not rendered');
+        if (!titles) ctx.skip('channel copy entries', 'the channel menu did not open');
         else {
           ctx.assert(titles.includes('Copy channel ID') && titles.includes('Copy channel path'), 'channel menu has the copy entries, got ' + JSON.stringify(titles));
           await ctx.eval(`${P}.test.clickMenu('Copy channel path')`); await ctx.sleep(300);
@@ -71,7 +72,8 @@ export default async function (ctx) {
       }
 
       /* ---------- 2. palette ---------- */
-      startChannel = await ctx.eval(`${P}.test.ownChannelId()`);
+      const local = await ctx.onTestServer();
+      if (local) startChannel = await ctx.eval(`${P}.test.ownChannelId()`);
       const others = (await ctx.eval(`${P}.channels()`)).filter(c => !c.current && !c.password);
       const target = others.find(c => /^power-/i.test(c.name)) || others[0];
       await openPalette();
@@ -98,7 +100,8 @@ export default async function (ctx) {
       ctx.equal(await overlays(), 0, 'palette closed after running an action');
       await ctx.restoreRoute();
 
-      if (!target) ctx.log('SKIP join test: no other joinable channel on the server');
+      if (!local) ctx.skip('join a channel from the palette', 'moves the own client: local test server only');
+      else if (!target) ctx.skip('join a channel from the palette', 'no other joinable channel on the server');
       else {
         await openPalette(); await type(target.name);
         ctx.assert((await activeText()).startsWith('Join ') && (await activeText()).includes(target.name), 'search puts "Join ' + target.name + '" first, got "' + await activeText() + '"');
@@ -142,7 +145,7 @@ export default async function (ctx) {
   if (connected) {
     await ctx.eval(`window.__pwr.test.showTree()`); await ctx.sleep(1200);
     const none = await ctx.eval(`(async () => { const c = window.__pwr.test.clients().find(c => !c.self); if (!c) return null; try { return await window.__pwr.test.openMenu('client', c.id); } catch (e) { return 'err'; } })()`);
-    ctx.assert(none === null || none === 'err', 'no copy entries in the menu after disable, got ' + JSON.stringify(none));
+    ctx.assert(none === null || none === 'err' || !none.some(t => /^Copy /.test(t)), 'no copy entries in the menu after disable (items of other enabled mods may remain), got ' + JSON.stringify(none));
     await closeMenu();
   }
   await ctx.eval(`delete window.__pwr`);

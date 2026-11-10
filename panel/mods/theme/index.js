@@ -43,7 +43,9 @@
 
     settings(api, box) {
       const { ui } = api, h = ui.h;
-      const sel = h('select', { class: 'theme-mod-select', on: { change: () => { try { api.theme.apply(sel.value || null); } catch (e) { S.error = String(e.message || e); } setTimeout(sync, 300); } } });
+      // after a switch the tree still has the old theme's row heights cached (stock behaviour), so re-measure once the new CSS is in
+      const remeasureSoon = () => { for (const ms of [400, 1200]) api.timeout(() => { api.theme.remeasure().catch(() => {}); }, ms); };
+      const sel = h('select', { class: 'theme-mod-select', on: { change: () => { try { api.theme.apply(sel.value || null); remeasureSoon(); } catch (e) { S.error = String(e.message || e); } setTimeout(sync, 300); } } });
       const fill = () => {
         const cur = api.theme.current() || '';
         sel.replaceChildren();
