@@ -1,0 +1,2 @@
+.theme-mod-select { min-width: 220px; max-width: 100%; padding: 4px 8px; color: var(--mods-fg); background: var(--mods-field-bg); border: 1px solid var(--mods-field-line); border-radius: 4px; font: inherit; }
+.theme-mod-select option, .theme-mod-select optgroup { color: var(--mods-fg); background: var(--mods-field-bg); }
