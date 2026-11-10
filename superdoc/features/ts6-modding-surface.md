@@ -163,7 +163,10 @@ Tested on the live client; all setters restored afterwards.
   `agc_experimental_mode`, `comfort_noise_enabled`, `comfort_noise_volume_db`, `echo_reduction_ducking`;
   unknown key -> `1538`. Values are strings. **The getters do not mirror these** (only
   `echo_reduction_ducking` reads back; `agc`, `agc_experimental_mode` etc. return `1538` and the native log says
-  "Tried to get value with an invalid ident"). Read the intended state from the UI model instead (below).
+  "Tried to get value with an invalid ident"). Read the intended state from the UI model instead: `audioSettings.buildPlaybackDspBlob()` returns
+  `{agc, agc_experimental_mode, aec, ...}` for the active playback device. The stock toggle is mirrored by
+  `audioSettings.onAudioDspSettingsChanged({io: 0, settings: {mode, deviceId, agc}})` + `audioSettings.save()` (`mode` is the
+  key of the `devices` map that holds the active device id; `settings[0].mode` itself can be empty).
 - **Capture DSP** (`getPreProcessorConfigValue/setPreProcessorConfigValue`): keys `agc`, `denoise`, `denoiser_level`,
   `typing_suppression`, `vad`, `voiceactivation_level`, `vad_mode`, `aec` (echo cancellation is routed here too);
   values are strings (`"true"`, `"-20.000000"`).
@@ -195,12 +198,12 @@ Tested on the live client; all setters restored afterwards.
 
 ## Loopback from the page
 
-`fetch`/`WebSocket` to `http://127.0.0.1:<port>` works only if the local server answers CORS
-(`Access-Control-Allow-Origin`) and, for the private-network preflight,
-`Access-Control-Allow-Private-Network: true` (proven earlier). A mod that talks to a helper daemon
-should serve those headers. The official Remote Apps websocket (`127.0.0.1:5899`, docs shipped in the install
-dir) needs the user to approve the app once and delivers events + hotkey presses; it is the sanctioned
-IPC and needs no CDP.
+**The stock UI page cannot open `http://` connections.** `fetch`, `XMLHttpRequest`, `WebSocket` and `<img>` to
+`http://127.0.0.1:<port>` all fail with `net::ERR_UNKNOWN_URL_SCHEME` and the request never reaches the listener (verified
+with a socket server; an earlier note claiming a CORS-enabled loopback `fetch` worked came from a patched UI copy and was wrong).
+Route to a helper: a CDP binding (`Runtime.addBinding` + `Runtime.bindingCalled`, the injector does the HTTP and answers via
+`Runtime.evaluate`), as `tools/cdp/mods-inject.mjs` does; or the official Remote Apps websocket (`127.0.0.1:5899`, needs the user to approve the
+app once, delivers events + hotkey presses).
 
 ## Official extension mechanism (no CDP needed)
 
@@ -212,7 +215,7 @@ live profile this way. Use this route for pure styling; use CDP for behaviour.
 ## Limits and security
 
 - No PCM/remote-level access from JS; no way to add native audio processing from the page (the DSP is native;
-  only its documented keys are reachable).
+  only its documented keys are reachable). Native processing is possible from outside the page: see [agc.md](agc.md) (preload hook on the output write).
 - Internals are minified and change every release; only `tsclient_internal` and the DOM are loosely stable.
 - Server-affecting bridge calls act as the real user. A mod must never call them unprompted.
 - **Security:** while the debug port is open, **any local process can attach and run arbitrary JS in the

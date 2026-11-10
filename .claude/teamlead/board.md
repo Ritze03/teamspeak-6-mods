@@ -4,7 +4,7 @@
 
 | ✓ | ID | Task | Agent | Owns | State | Branch |
 |:-:|:--:|------|-------|------|-------|--------|
-|   | 8 | Integrate whole-stream AGC: LD_PRELOAD .so (playback output hook + DSP), loopback control API, launcher (CDP inject), in-client panel incl. TS AGC + experimental toggle; live test with music bot; docs | `tl-sonnet-medium` | `native`, `launcher`, `panel`, `tools/cdp`, `superdoc/features/agc.md`, `superdoc/features/ts6-modding-surface.md`, `superdoc/features/ts6-ui-extension-points.md`, `superdoc/architecture/overview.md`, `superdoc/meta/TERMINOLOGY.md`, `CLAUDE.md` | running | — |
+|   | 8 | Integrate whole-stream AGC: LD_PRELOAD .so (playback output hook + DSP), loopback control API, launcher (CDP inject), in-client panel incl. TS AGC + experimental toggle; live test with music bot; docs | `tl-sonnet-medium` | `native`, `launcher`, `panel`, `tools/cdp`, `superdoc/features/agc.md`, `superdoc/features/ts6-modding-surface.md`, `superdoc/features/ts6-ui-extension-points.md`, `superdoc/architecture/overview.md`, `superdoc/meta/TERMINOLOGY.md`, `CLAUDE.md` | returned | — |
 
 ## Done
 

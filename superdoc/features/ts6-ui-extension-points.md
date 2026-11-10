@@ -23,7 +23,7 @@ Menu/tool items are instances of an internal class; get its constructor from any
 (`new (existingItem.constructor)(title, iconName, onSelected)`). Icon names are plain strings
 (`'settings-addons'`, `'microphone'`, `'speaker'`, ...; same names as in the bundle's icon enum).
 
-## 1. Custom page in Settings  (works; survives route changes)
+## 1. Custom page in Settings  (works; survives route changes; used by the Mods page, see [mods-panel.md](mods-panel.md))
 
 Settings is an activity whose pages come from `app.contentModes.settings` (array of mode descriptors). The
 nav list is built by the categories component from that array: known keys go to fixed groups, **unknown keys land
@@ -239,3 +239,10 @@ re-apply nothing after a UI reload (see "Do not Page.reload").
 - Adding a new Key Binding action; per-speaker levels; remote-audio PCM.
 - Server/chat/avatar context menus, content-header icons per class, `ts-*` registered components inside injected
   settings pages, popup (separate window) targets: **untested**.
+
+## 11. Left icon column and the Dashboard item  (works; see [mods-panel.md](mods-panel.md))
+
+The column's four icons are separate `.tsv-resources-group` blocks in `.resources-section` (Vue-rendered from internal resources,
+not extendable). A same-class DOM block with `<ts-icon name="...">` (globally registered functional component, usable from any
+`new Vue({render})`) fits; keep it with a debounced MutationObserver. The main-menu entry "Dashboard" is the item
+`appController.dashboard`; `appController.showItem(appController.dashboard)` navigates to `#/dashboard`.

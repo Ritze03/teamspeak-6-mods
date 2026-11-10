@@ -1,7 +1,7 @@
 # Better AGC / compressor-limiter for TeamSpeak 6
 
-> **Stage 4** — implementation plan written · started 2026-11-10
-> Typing "Go" now → I put phase A on the board and start building.
+> **Stage 5** — building (one phase, I1–I14) · started 2026-11-10
+> Next: build everything, run the agent checks, then hand you the test guide.
 
 ## Goal
 A modded TS6, made of a CDP-injected UI plus an `LD_PRELOAD` native module, with:
@@ -14,7 +14,8 @@ Every feature is individually switchable. With everything off, the client is van
 User's ask: a well-functioning per-user (per incoming stream) compressor/limiter for TS6 with simple settings, ideally configurable in the TS6 UI (plugin); replaces TS6's peaky built-in AGC. Find a way in via online research + reverse engineering (TS6 plugin API barely documented). Out-of-the-box approaches welcome. Longer term: more TS6 customization.
 
 **Machine:**
-- TS6 `6.0.0beta5` (AUR `teamspeak`, `/usr/bin/teamspeak`) and TS3 `3.6.2` are installed.
+- TS6 **`6.0.0-beta5.1`** is now installed (local PKGBUILD bump of AUR `teamspeak`; binary md5 `93efb8eb…`), together with TS3 `3.6.2`. All RE below was done on beta5 (md5 `0d2f15bb…`).
+- **The Spike A signature still matches exactly once in beta5.1.** The full pattern is at file `0x4554f10` (it was `0x44ebd60`), so offsets moved and the byte-signature approach works.
 - The user's installed themes include `graphite` and `aurora`, which share one layout.
 
 **Web research (row 3):**
@@ -150,16 +151,38 @@ Phase A builds on and refactors it.
   - *User: "compress images that are too large with settings … maximum resolution … automatically determine the right compression level … if possible do it in the code itself."*
   - *Caveat:* if TS uploads by file path natively instead of from a JS `File`, the compressed file is written to a temp file via the native module's loopback API and that path is handed over.
 
+- **D18** **Extensible mod API, TS internals in one place.**
+  - Every TS-specific selector, vm path and bridge call lives in a single **anchors** module in `panel/core/`.
+  - Mods never name DOM ids or classes. They call semantic slots, e.g. `api.topBar.add(el)`, `api.contextMenu.client.add({label, onClick})`, `api.settings.addSection()`, `api.treeRow.decorate(fn)`, `api.chatInput.onBeforeSend(fn)`.
+  - Plugins can extend the API further: `api.extend('name', impl)` and new slot definitions, which other plugins then use.
+  - After a TS update only the anchors need fixing.
+  - *User: "the ID is still stored somewhere, but only in a single place … plugins can say stuff like yeah, add this to the top bar … plugins should be able to extend this API even further."*
+
+- **D19** **Every mod ships an agent-runnable test procedure.**
+  - A CDP-driven `panel/mods/<name>/test.mjs`, with no user input, plus a written procedure on the mod's doc page.
+  - `tools/test/run-all.mjs` runs an anchor health check (every anchor resolves on the installed TS version), the native signature-scan check, then every mod test.
+  - After a TS update, an agent re-runs it and fixes what fails.
+  - *User: "write down a testing procedure for every single mod … an agent should be able to test it, so no user intervention is required for updates."*
+
+- **D20** **A user-facing `README.md` at the repo root.** It covers:
+  - what the project is, with a feature list (each feature toggleable, everything off = vanilla);
+  - requirements (Linux, TS6 version tested, Node, gcc);
+  - build + launch (`launcher/ts6-mod`, desktop entry);
+  - where the Mods settings live and how to disable everything;
+  - writing your own plugin against the mod API;
+  - running `tools/test/run-all.mjs` after a TS update;
+  - a ToS caveat that client modification may violate TeamSpeak's terms.
+  - No personal data. — *user: "Also write a readme".*
+
+- **D17** **One phase. All human testing comes at the very end.** Everything is built and agent-verified with no pause for the user. Stage 7 is the user testing the whole thing at once, guided by a test guide. — *user: "the last phase should be me testing everything … so I can actually sleep and just come back to something that I can test."*
+
 ## Done when
-**Phase A — mod framework + per-user AGC**
+**Agent-verified (run in Stage 6, before you test anything)**
 - [ ] With all mods off, a CDP check finds no injected DOM except the Mods settings entry; the native `/status` reports passthrough with 0 added latency; and no mod-originated server requests occur — *verified by: agent*
 - [ ] On the rig, the per-speaker hook maps each talker correctly (probe log: clientId ↔ known talker, 10 ms int16 blocks) — *verified by: agent*
 - [ ] On the rig, a burst-heavy talker never exceeds the configured ceiling at the listener, while a quiet talker is levelled up independently (per-speaker mode) — *verified by: agent*
 - [ ] Every AGC parameter, mode, preset (built-in + custom save/rename/delete) and per-user override is editable in the panel and survives a client restart — *verified by: agent*
 - [ ] `make -C native/dsp test` passes and the native module builds with zero warnings — *verified by: agent*
-- [ ] The AGC sounds good on the real server and its settings are useful for tuning — *verified by: user*
-
-**Phase B — UI mods**
 - [ ] Each UI mod has its own toggle, default off; switching one off removes its DOM, listeners, timers and polling — *verified by: agent*
 - [ ] On the real client each feature works:
   - the HUD shows live ping/loss;
@@ -174,30 +197,44 @@ Phase A builds on and refactors it.
 - [ ] Message splitting: the splitter's unit tests pass, with every part ≤ the limit, fences balanced in every part, and rejoining the parts giving the original text. On the real client, an over-limit message typed into a chat with yourself (or an empty channel) goes out as N parts, with the hint shown and the delay honoured — *verified by: agent*
 - [ ] Image compression: the user's test set is copied to `.claude/local/test-images/` (local only, never committed) and used read-only. It holds 6 PNGs of 16–45 MB, plus a 143 MB `whale.zip`. Each PNG is sent under the limit, at ≤ the max resolution, with the quality chosen automatically. A PNG with transparency is handled too (generate one if none of the set has alpha). A file already under the limit, and the non-image `.zip`, are left untouched. Verified on the real client in a chat with yourself — *verified by: agent*
 - [ ] Screenshots of every mod in the default and graphite themes show no layout breakage — *verified by: agent*
-- [ ] Everything looks right in the default theme and your themes — *verified by: user*
 - [ ] `map.py --check` shows no DANGLING links, and the docs are anonymized (no names, IDs, hosts, home paths) — *verified by: agent*
+- [ ] No mod contains a raw TS selector, vm path or bridge name; a grep of `panel/mods/` for `tsv-`/`ts-`/`__vue__`/`tsclient_internal` is empty, and all of them live in the anchors module only — *verified by: agent*
+- [ ] A sample plugin that adds its own API extension, plus a second plugin that uses that extension, both work — *verified by: agent*
+- [ ] `node tools/test/run-all.mjs` passes on the real client with no user input. Every anchor resolves, every mod's automated test passes, the native signature scan finds the hook, and each mod's doc page has a written test procedure — *verified by: agent*
+- [ ] `README.md` covers every D20 item, and every command in it runs as written — *verified by: agent*
+- [ ] A **test guide** exists at `superdoc/features/testing-guide.md`: how to launch the modded client, then one short checklist per mod with what to try and what you should see — *verified by: agent*
+
+**Your testing (Stage 7, the very end; everything is built and agent-checked first)**
+- [ ] The client starts via the launcher and behaves like vanilla with every mod off — *verified by: user*
+- [ ] The AGC sounds good on the real server and its settings are useful for tuning (whole-stream and per-speaker) — *verified by: user*
+- [ ] Each UI mod does what you wanted: HUD, copy menu, palette, activity badges, join/leave feed, chat tabs, density, declutter, theme reload, Dashboard button, message splitting, image compression — *verified by: user*
+- [ ] Everything looks right in the default theme and your themes — *verified by: user*
 
 ## Implementation plan
-*Built from D1–D16 · decisions:cb95*
+*Built from D1–D20 · decisions:2a6b*
 
 | Wave | ID | Task | Agent | Owns | After |
 |:----:|:--:|------|-------|------|-------|
-| — | **A** | **Mod framework + per-user AGC** | | | |
-| 1 | I1 | Mod core: registry, Mods settings page with a per-mod toggle (default off), `saveJsonBlob('mods')` persistence, mod-API helpers (settings section, context-menu item, toolbar item, tree-row hook, toast, version), theme-safe styling. The launcher injects core + `panel/mods/*`. Port row 8's panel (AGC section, Dashboard button) onto it. Doc: mod API page — **D4 D7 D8 D10 D12** | `tl-sonnet-medium` | `panel/core/`, `launcher/`, `superdoc/features/ts6-mod-api.md` | — |
+| 1 | I1 | Mod core + **extensible mod API**:<br>• registry, Mods settings page with a per-mod toggle (default off), `saveJsonBlob('mods')` persistence;<br>• **one anchors module** holding every TS selector, vm path and bridge call;<br>• semantic slots: top bar, sidebar icon, settings section, context menu (client/channel/server), tree-row decorator, chat input, toasts, modals, events, version;<br>• `api.extend()` / slot definitions so plugins can add their own API.<br>Theme-safe styling. The launcher injects core + `panel/mods/*`. Port row 8's panel (AGC section, Dashboard button) onto it.<br>**Test harness:** `tools/test/run-all.mjs` (CDP, no user input) runs an anchor health check plus every mod's `test.mjs`. Doc: mod API page — **D4 D7 D8 D10 D12 D18 D19** | `tl-sonnet-medium` | `panel/core/`, `launcher/`, `tools/test/`, `superdoc/features/ts6-mod-api.md` | — |
 | 1 | I2 | Test rig: local TS6 server, isolated talker client(s) with a PipeWire virtual-source mic playing test WAVs, an isolated modded listener, and start/stop scripts. Doc page — **D2 D13** | `tl-sonnet-medium` | `tools/rig/`, `superdoc/features/test-rig.md` | — |
 | 2 | I3 | Per-speaker native hook: runtime probe on the rig (args, clientId offset, thread), signature scan, a per-sender ts6dsp instance, per-user overrides, lookahead flush at end of speech, control-API per-user endpoints, exact passthrough when off. Falls back to `re-opus48` if stopped — **D1 D3 D6 D7** | `tl-opus-medium` | `native/` | I2 |
 | 3 | I4 | AGC UI (`audio` mod):<br>• global page with every parameter, built-in + custom presets, whole-stream/per-speaker mode, live meters, TS playback-AGC + experimental toggles;<br>• per-user audio popover: volume past the stock limit, mute, boost, per-user AGC override.<br>Doc `agc.md` — **D1 D5 D9 D11** | `tl-sonnet-medium` | `panel/mods/audio/`, `superdoc/features/agc.md` | I1, I3 |
-| — | **B** | **UI mods** | | | |
-| 4 | I5 | `net` mod: ping/loss/bandwidth HUD, sparkline + alerts, channel codec readout, copy-diagnostics. Doc — **D9** | `tl-sonnet-medium` | `panel/mods/net/`, `superdoc/features/mod-net.md` | I4 |
-| 4 | I6 | `power` mod: copy UID/IDs menu for users and channels, Ctrl+K command palette (local + join actions), dev-flag unlocker section. Doc — **D9** | `tl-sonnet-medium` | `panel/mods/power/`, `superdoc/features/mod-power.md` | I4 |
+| 4 | I5 | `net` mod: ping/loss/bandwidth HUD, sparkline + alerts, channel codec readout, copy-diagnostics. Doc — **D9 D19** | `tl-sonnet-medium` | `panel/mods/net/`, `superdoc/features/mod-net.md` | I4 |
+| 4 | I6 | `power` mod: copy UID/IDs menu for users and channels, Ctrl+K command palette (local + join actions), dev-flag unlocker section. Doc — **D9 D19** | `tl-sonnet-medium` | `panel/mods/power/`, `superdoc/features/mod-power.md` | I4 |
 | 4 | I7 | `aware` mod: channel activity badges, throttled idle probe (expanded channels only), join/leave feed. Zero server requests when off. Doc — **D7 D9** | `tl-sonnet-medium` | `panel/mods/aware/`, `superdoc/features/mod-aware.md` | I4 |
 | 4 | I8 | `layout` mod: chat tabs in the title bar (36 px, servers optional), density slider, declutter toggles. Doc — **D9 D10** | `tl-sonnet-medium` | `panel/mods/layout/`, `superdoc/features/mod-layout.md` | I4 |
 | 4 | I9 | `theme` mod: live theme reload with tree re-measure, theme picker, reload button. Doc — **D9 D14** | `tl-sonnet-medium` | `panel/mods/theme/`, `superdoc/features/mod-theme.md` | I4 |
 | 4 | I13 | `chat` mod: raise the input limit, find the server's per-message limit, split on send at paragraph/line/word boundaries, fence-aware code-block splitting (close and reopen with the same fence and lang), "will send as N parts" hint, inter-part delay setting (default 0 ms). Pure splitter function with assert tests. Doc — **D7 D15** | `tl-sonnet-medium` | `panel/mods/chat/`, `superdoc/features/mod-chat.md` | I4 |
 | 4 | I14 | `files` mod: find TS's upload path and limit, intercept oversized images, downscale to max resolution, binary-search the quality to fit, choose the format, strip metadata, skip GIFs; in-page codecs, with a native temp-file fallback only if uploads go by path (scope request for `native/`). Settings UI. Doc — **D7 D16** | `tl-sonnet-medium` | `panel/mods/files/`, `superdoc/features/mod-files.md` | I4 |
 | 5 | I10 | Theme-compat visual pass: screenshot every mod in the default and graphite themes and fix any styling issues — **D10** | `tl-opus-medium` | `panel/` | I5, I6, I7, I8, I9, I13, I14 |
-| 6 | I11 | Docs integration: overview module map + "where to look", `CLAUDE.md` stack and links, TERMINOLOGY, a "how to build your own mod" section — **D5** | `tl-sonnet-medium` | `superdoc/architecture/overview.md`, `CLAUDE.md`, `superdoc/meta/TERMINOLOGY.md` | I10 |
-| 6 | I12 | QC: vanilla check with everything off, plus every agent criterion — **D7** | `tl-sonnet-medium` | *(read-only)* | I10 |
+| 6 | I11 | Docs integration: overview module map + "where to look", `CLAUDE.md` stack and links, TERMINOLOGY, a "how to build your own mod" section, the **user test guide** (launch + one checklist per mod), and the root **`README.md`** — **D5 D17 D20** | `tl-sonnet-medium` | `superdoc/architecture/overview.md`, `CLAUDE.md`, `superdoc/meta/TERMINOLOGY.md`, `superdoc/features/testing-guide.md`, `README.md` | I10 |
+| 6 | I12 | QC: vanilla check with everything off, `run-all.mjs`, plus every agent criterion — **D7 D18 D19** | `tl-sonnet-medium` | *(read-only)* | I10 |
+
+**Every mod step (I4–I9, I13, I14) also:**
+- uses only the mod API: no TS selectors outside `panel/core/` anchors. Missing slots go to the lead as a scope request against `panel/core/` (**D18**);
+- ships `test.mjs` plus a written test procedure on its doc page (**D19**).
+
+I3 adds a signature-scan self-check that `run-all.mjs` calls.
 
 ## Open questions
 

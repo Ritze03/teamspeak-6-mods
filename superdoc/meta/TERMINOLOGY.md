@@ -16,3 +16,4 @@ appending. This file stays in context for the whole session.
 
 ## Terms
 
+- **Dashboard**: TS6's home/start page (banner, Popular Servers, Chats, Recent), opened natively via the sidebar hamburger menu; the mod adds a direct button. See [features/mods-panel.md](../features/mods-panel.md#dashboard-button).

@@ -1,0 +1,34 @@
+/* Only classes prefixed mods-; colours come from the active TS theme's variables. */
+.mods-card { --mods-fg: var(--ts-primary-font-color, #d2d2d2); --mods-accent: var(--ts-primary-accent-color, #6aa0ff); }
+.mods-title { margin: 4px 0 8px; font-size: 15px; font-weight: 600; }
+.mods-sub { margin-top: 22px; }
+.mods-disabled { opacity: .5; }
+.mods-dim .mods-field, .mods-dim .mods-adv { opacity: .55; }
+.mods-status { margin: -4px 0 10px; }
+.mods-absent { margin: 4px 0; opacity: .8; line-height: 1.4; }
+.mods-error { margin: 8px 0 0; color: #ff6b6b; }
+.mods-block { margin: 6px 0 4px; }
+.mods-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.mods-label { min-width: 150px; }
+.mods-pill { border: 1px solid rgba(128,128,128,.45); background: transparent; color: inherit; border-radius: 14px; padding: 3px 14px; cursor: pointer; font: inherit; }
+.mods-pill.on { background: var(--mods-accent); color: #111; border-color: transparent; }
+.mods-pill.ghost { cursor: default; opacity: .55; }
+.mods-pill.ghost.on { opacity: 1; }
+.mods-link { background: none; border: 0; color: var(--mods-accent); cursor: pointer; padding: 0; font: inherit; }
+.mods-link:hover { text-decoration: underline; }
+.mods-field { display: grid; grid-template-columns: 170px 1fr 90px; align-items: center; gap: 10px; margin: 6px 0; }
+.mods-range { width: 100%; accent-color: var(--mods-accent); }
+.mods-num { display: flex; align-items: baseline; gap: 4px; justify-content: flex-end; }
+.mods-num input { width: 54px; background: rgba(128,128,128,.15); color: inherit; border: 1px solid rgba(128,128,128,.35); border-radius: 4px; padding: 2px 4px; text-align: right; font: inherit; }
+.mods-num em { font-style: normal; opacity: .7; min-width: 18px; }
+.mods-adv { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(128,128,128,.25); }
+.mods-meters { margin: 12px 0 4px; }
+.mods-meter { display: grid; grid-template-columns: 120px 1fr 80px; align-items: center; gap: 10px; margin: 4px 0; font-size: 12px; }
+.mods-meter-track { height: 8px; border-radius: 4px; background: rgba(128,128,128,.25); overflow: hidden; }
+.mods-meter-fill { height: 100%; border-radius: 4px; transition: width .08s linear; }
+.mods-meter-fill.in { background: #3ddc84; }
+.mods-meter-fill.gr { background: #ffb74d; }
+.mods-meter-fill.lg { background: #64b5f6; }
+.mods-meter-v { text-align: right; font-variant-numeric: tabular-nums; opacity: .85; }
+@media (max-width: 700px) { .mods-field { grid-template-columns: 1fr; } }
+.mods-dash.active .tsv-tab-item { background: rgba(128,128,128,.28); border-radius: 8px; }

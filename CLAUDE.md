@@ -1,7 +1,13 @@
 # teamspeak-6-mods
 
-Mods for the TeamSpeak 6 client. Nothing is built yet; stack and conventions get recorded
-here as they are decided.
+Mods for the TeamSpeak 6 client (Linux), added without patching its files. Stack: a C `LD_PRELOAD`
+module with a DSP core (`native/`, whole-stream AGC on the output write), a Node launcher + CDP injector
+(`launcher/ts6-mod`, `tools/cdp/`), and an injected JS "Mods" settings page (`panel/`). Rule: every feature has its
+own switch and defaults to off; everything off = vanilla client. Start modded: `launcher/ts6-mod`.
+
+Feature docs (plain links, read on demand): `superdoc/features/agc.md` (AGC mod, hook, control API, build/launch),
+`superdoc/features/mods-panel.md` (panel, Dashboard button), `superdoc/features/ts6-modding-surface.md` (client
+internals reachable from outside), `superdoc/features/ts6-ui-extension-points.md` (UI hooks).
 
 <!-- superdoc:start v4 -->
 ## Docs: read before you touch, update after you change

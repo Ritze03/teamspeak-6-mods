@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Start the TeamSpeak 6 client with the ts6-mods native module and the "Mods" settings page.
+# Same as the desktop entry (/opt/teamspeak/TeamSpeak %u) plus LD_PRELOAD and a loopback-only debug port.
+# Env: TS6MOD_TS_BIN (client binary), TS6MOD_CDP_PORT (default 9222), TS6MOD_PORT (control API, default 38998),
+#      TS6MOD_WRAP (optional command prefix, e.g. "ccorral --"). Everything else is passed to the client.
+set -u
+root="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+ts="${TS6MOD_TS_BIN:-/opt/teamspeak/TeamSpeak}"
+cdp="${TS6MOD_CDP_PORT:-9222}"; ctl="${TS6MOD_PORT:-38998}"
+so="$root/native/libts6mod.so"
+
+if [ ! -x "$ts" ]; then echo "ts6-mod: client not found at $ts (set TS6MOD_TS_BIN)" >&2; exit 1; fi
+if [ ! -f "$so" ] || [ "$root/native/ts6mod.c" -nt "$so" ] || [ "$root/native/dsp/ts6dsp.c" -nt "$so" ]; then
+  make -C "$root/native" >&2 || { echo "ts6-mod: building native module failed" >&2; exit 1; }
+fi
+if ! command -v node >/dev/null; then echo "ts6-mod: node (>= 22) is required" >&2; exit 1; fi
+if [ -n "$(pgrep -x TeamSpeak -u "$(id -u)" 2>/dev/null)" ]; then
+  echo "ts6-mod: TeamSpeak is already running; close it first (the module can only be preloaded at start)" >&2; exit 1
+fi
+
+export TS6MOD_PORT="$ctl"
+LD_PRELOAD="$so${LD_PRELOAD:+:$LD_PRELOAD}" ${TS6MOD_WRAP:-} "$ts" --remote-debugging-port="$cdp" "$@" &
+ts_pid=$!
+node "$root/tools/cdp/mods-inject.mjs" --cdp-port "$cdp" --port "$ctl" &
+inj_pid=$!
+# The client hands over to a re-spawned process right after start, so the first pid exits early:
+# follow the process that carries our debug-port flag instead.
+main_pid() { pgrep -u "$(id -u)" -f "^$ts --remote-debugging-port=$cdp( |\$)" | head -n1; }
+trap 'p=$(main_pid); [ -n "$p" ] && kill -TERM "$p" 2>/dev/null' INT TERM HUP
+wait "$ts_pid"; rc=$?
+while [ -n "$(main_pid)" ]; do sleep 1; done
+kill "$inj_pid" 2>/dev/null
+exit "$rc"
