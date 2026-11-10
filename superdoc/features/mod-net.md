@@ -23,13 +23,16 @@ Built on [ts6-mod-api.md](ts6-mod-api.md); files: `panel/mods/net/` (`index.js`,
   Shows `<ping> ms`, `<loss> %` and, if enabled, `↓in ↑out` per second (short units). Hidden while not connected. Ping turns warning-coloured over
   the ping limit, loss error-coloured over the loss limit (the limits are the alert limits, also with alerts off).
 - **Constant width** (`style.css`: `.net-ping`, `.net-loss`, `.net-bwv`): every field is an inline-block with a reserved `min-width`
-  and right-aligned tabular digits: ping `7ch` ("9999 ms"), loss `7ch` ("100.0 %"; `fmtPct` always prints one decimal), bandwidth
-  two boxes of `7ch` each (`↓1023k`, `↑1023k`). `fmtBwShort` uses a fixed unit set (B, k, M), one decimal below 100 for k/M, whole numbers
+  and right-aligned tabular digits: ping `6ch` ("999 ms"), loss `6ch` ("99.9 %"; `fmtPct` always prints one decimal; "100.0 %" just grows the field), bandwidth
+  two boxes of `5.5ch` each (`↓12.3k`; a longer value like `↓1023k` grows its box). Gaps are 6 px. `fmtBwShort` uses a fixed unit set (B, k, M), one decimal below 100 for k/M, whole numbers
   otherwise (max 5 characters). The HUD's width therefore only changes when the bandwidth option is toggled, in both positions, and the
   stock icons beside it never move. Narrow-pane clipping (`maxWidth` from `api.net.bottomBar`) still drops whole fields by wrapping,
-  it does not reflow them; the fixed boxes are wider than a short value, so at the minimum pane width loss (and bandwidth) drop out earlier than before.
+  it does not reflow them; the fixed boxes are wider than a short value, so at the minimum pane width bandwidth drops out first.
   Why: a changing digit count or unit made the readout and the stock items next to it shift on every sample; reserving the worst case
-  trades a few pixels of empty space for a stable bar.
+  trades a few pixels of empty space for a stable bar. The reserved widths are the typical worst case (6ch), not the absolute one (7ch):
+  7ch boxes made the gaps look huge, and the three fields (about 52 + 52 + 109 px) no longer fitted the ~228 px the bottom bar leaves, so
+  the bandwidth part wrapped onto the clipped second line and was never visible although the option was on (it existed, `hidden=false`,
+  but sat below the 21 px clip). With 6ch/5.5ch the whole HUD is about 200 px and fits.
   In a narrow toolbar the HUD shrinks and the data rate wraps onto a clipped second line instead of spilling under the next pane.
   In the bottom bar it must have `position: relative` like the stock items: the group's background is an absolutely positioned
   `::before` that otherwise paints over static children.
