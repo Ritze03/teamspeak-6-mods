@@ -13,7 +13,9 @@ export default async function (ctx) {
   const reqs = () => ctx.eval(`__ts6mod.trace().nativeRequests`);
   const modOn = () => ctx.eval(`__ts6mod.list().find(m => m.id === 'audio').enabled`);
   const near = (a, b) => Math.abs(a - b) < 0.06;
-  const click = sel => ctx.eval(`(() => { const n = document.querySelector(${JSON.stringify(sel)}); if (!n) throw new Error('missing ' + ${JSON.stringify(sel)}); n.click(); return 1; })()`);
+  // the page (or its tab) may still be rendering / re-rendering after a state change: wait for the node instead of failing at once
+  const click = async sel => { await ctx.waitFor(`!!document.querySelector(${JSON.stringify(sel)})`, 'present: ' + sel, 8000); return click0(sel); };
+  const click0 = sel => ctx.eval(`(() => { const n = document.querySelector(${JSON.stringify(sel)}); if (!n) throw new Error('missing ' + ${JSON.stringify(sel)}); n.click(); return 1; })()`);
   const clickText = (scope, text) => ctx.eval(`(() => { const n = [...document.querySelectorAll(${JSON.stringify(scope + ' label, ' + scope + ' button')})].find(x => x.textContent.trim().startsWith(${JSON.stringify(text)})); if (!n) throw new Error('missing ' + ${JSON.stringify(text)}); n.click(); return 1; })()`);
   const setNum = (scope, key, v) => ctx.eval(`(() => { const i = document.querySelector(${JSON.stringify(scope + ' [data-key="' + key + '"] input[type=number]')}); if (!i) throw new Error('no field ' + ${JSON.stringify(key)}); i.value = ${v}; i.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
   const store = () => ctx.eval(`JSON.parse(JSON.stringify(__ts6mod.store().settings.audio || null))`);

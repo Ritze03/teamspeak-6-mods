@@ -157,9 +157,11 @@ export const tests = [
     c.assert(String(await c.eval(`window.__serverThrew`)).includes('not supported'), 'contextMenu.server.add throws a clear error: ' + await c.eval(`window.__serverThrew`));
 
     // tree row decoration
-    // rows are recycled and decorated by a debounced observer: wait until EVERY rendered row carries the marker of its own model
-    const rowsOk = kind => `(() => { const rows = [...document.querySelectorAll('.ts-server-tree-item-leaf.${kind}${kind === 'channel' ? ':not(.spacer)' : ''}')].filter(r => ${ROWMODEL}(r));
-      return rows.length > 0 && rows.every(r => { const d = r.querySelector('.mods-deco'); return d && d.textContent === '${kind === 'client' ? '#' : 'c'}' + ${ROWMODEL}(r).id; }); })()`;
+    // rows are recycled and decorated by a debounced observer: wait until EVERY rendered row carries the marker of its own model (this test's own marker: other enabled mods decorate rows too)
+    // only rows rendered inside the tree scroller: the virtual list parks pooled rows off screen (a real server has many more rows than fit)
+    const rowsOk = kind => `(() => { const sc = document.querySelector('.ts-server-tree-scroller'), b = sc ? sc.getBoundingClientRect() : null, top = b && b.height > 0 ? b.top : 0, bot = b && b.height > 0 ? b.bottom : innerHeight;
+      const rows = [...document.querySelectorAll('.ts-server-tree-item-leaf.${kind}${kind === 'channel' ? ':not(.spacer)' : ''}')].filter(r => { const x = r.getBoundingClientRect(); return x.height > 0 && x.bottom > top && x.top < bot && ${ROWMODEL}(r); });
+      return rows.length > 0 && rows.every(r => { const d = r.querySelector('.mods-deco[data-ts6mod="t-ui"]'); return d && d.textContent === '${kind === 'client' ? '#' : 'c'}' + ${ROWMODEL}(r).id; }); })()`;
     await c.eval(`__ts6mod.mods().get('t-ui').api.treeRow.refresh()`);
     await c.waitFor(rowsOk('client'), 'every client row shows its own id (own and other users\' rows)', 10000);
     await c.waitFor(rowsOk('channel'), 'every channel row shows its own id', 10000);
@@ -212,7 +214,7 @@ export const tests = [
     await c.eval(`window.__fake.host.remove()`);
 
     await c.disable('t-ui');
-    c.equal(await c.eval(`document.querySelectorAll('.mods-deco').length`), 0, 'row decorations removed');
+    c.equal(await c.eval(`document.querySelectorAll('.mods-deco[data-ts6mod="t-ui"]').length`), 0, 'row decorations removed');
     c.assert(await c.eval(`__ts6mod.anchors.chat.inputs().every((v, i) => v.sendMessageContent === window.__origSend[i])`), 'composer back to its state before the test (stock method, or the layer of another enabled mod)');
     c.equal(await open('.ts-server-tree-item-leaf.client.self'), null, 'menu items gone');
     await closeMenu();

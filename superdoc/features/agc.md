@@ -115,7 +115,7 @@ Voice preset) + **Save as preset…** (switches to Presets and opens the name fi
 Without the native module only the note above the tabs and the playback AGC box are shown. While the master switch is off the
 mode/preset/parameter/meter boxes are dimmed (still editable).
 
-- **Master switch** "Audio processing (AGC)", **Mode** pills (whole stream / per speaker, help text under them), a status line
+- **Master switch** box (Processing tab): the "Audio processing (AGC)" switch, **Mode** pills (whole stream / per speaker, help text under them), a status line
   (processing/passthrough, delay, speakers, hook state).
 - **Presets**: pills for the built-ins and your own; "modified" badge when the current values differ from the selected preset
   (tolerance 0.006); buttons Save as..., Update preset (own preset, modified), Rename, Delete, Revert to preset. Own presets are in the

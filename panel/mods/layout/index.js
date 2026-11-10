@@ -24,6 +24,9 @@
       if (!strip) return;
       const tabs = L.chats.list().filter(t => (t.kind === 'server' ? S.serverTabs : S.chatTabs));
       const servers = tabs.filter(t => t.kind === 'server'), chats = tabs.filter(t => t.kind === 'chat');
+      // a shown chat tab that is the open view takes the highlight from the server tab; with chat tabs off the server tab keeps it
+      // (the own channel's chat counts as active whenever that channel is showing, which must not hide the server tab)
+      if (chats.some(t => t.active)) servers.forEach(t => { t.active = false; });
       const key = JSON.stringify(tabs);
       if (strip.dataset.key === key) return;
       strip.dataset.key = key;
