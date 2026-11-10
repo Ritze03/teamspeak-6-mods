@@ -1,0 +1,17 @@
+/* Layout mod: the tab strip in the title bar. Tokens only (--mods-*); placement is set by index.js from the bar geometry. */
+.lay-strip { position: fixed; z-index: 30; display: flex; align-items: center; gap: 4px; box-sizing: border-box; overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; -webkit-app-region: no-drag; pointer-events: none; color: var(--mods-fg); font-size: 13px; }
+.lay-strip::-webkit-scrollbar { display: none; }
+.lay-strip.empty { display: none; }
+.lay-tab { pointer-events: auto; flex: 0 1 180px; min-width: 70px; max-width: 220px; height: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 6px;
+  padding: 0 6px 0 12px; border-radius: 8px; background: var(--mods-field-bg); border: 1px solid transparent; cursor: pointer; user-select: none; -webkit-app-region: no-drag; }
+.lay-tab:hover { background: color-mix(in srgb, var(--mods-fg) 10%, var(--mods-field-bg)); }
+.lay-tab.active { background: var(--mods-hover); border-color: var(--mods-accent); }
+.lay-tab.server { flex-basis: 150px; padding-right: 12px; }
+.lay-tab-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lay-tab.unread .lay-tab-title { font-weight: 600; }
+.lay-tab-icon { flex: 0 0 auto; display: inline-flex; width: 18px; height: 18px; }
+.lay-tab-badge { flex: 0 0 auto; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 5px; border-radius: 9px; background: var(--mods-accent); color: var(--mods-accent-fg); font-size: 11px; line-height: 18px; text-align: center; }
+.lay-tab-x { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--mods-muted); font-size: 16px; line-height: 20px; cursor: pointer; }
+.lay-tab-x:hover { background: var(--mods-hover); color: var(--mods-fg); }
+.lay-sep { pointer-events: none; flex: 0 0 1px; height: 60%; background: var(--mods-line); margin: 0 4px; }
