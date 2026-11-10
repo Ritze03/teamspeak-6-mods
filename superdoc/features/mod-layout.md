@@ -21,6 +21,13 @@ All TeamSpeak names live in `panel/core/x-layout.js` (core extension file, `api.
      scrolls (mouse wheel; the active tab is scrolled into view); under 60 px of room the strip hides.
      Why (stays put without a chat pane): the user does not want the tabs to jump left when entering Settings.
      Why: the user wants the tabs to read as the chat's tabs ("at the same horizontal coordinate as where the actual chat starts").
+   - **Tab pictures:** every tab starts with a round 20 px picture, the same one the client shows in the tree and the chat header: the
+     channel's own custom icon (pinned tab and channel chats) or the user's avatar (private chats). Mechanism: `api.layout.chats.list()`
+     items carry `img`, read from the stock item's `image` (`{type:'url', src}` with a `tsic://` URL served from the client's own cache,
+     `ts-frame=1` appended like the stock component does, so animated images show their first frame); it is empty for a channel without
+     icon / a user without avatar. No own requests: if the client has not fetched the avatar yet nothing is shown until it has, since
+     `img` is part of the watched snapshot the tab then updates. Fallback (no image, or the image fails to load): the generic channel icon
+     (channels) or the generic user icon (users). Why (user): the real images identify tabs at a glance; the generic hexagon did not.
    - **First tab = the chat of your current channel** (pinned): channel icon + channel name; click shows that channel's chat (the
      stock "Show current Channel Chat" action); it follows the own channel live (label, target and unread count change on a channel
      move); it is always leftmost, has no x and cannot be dragged; it is active when the current channel's chat is the shown view.

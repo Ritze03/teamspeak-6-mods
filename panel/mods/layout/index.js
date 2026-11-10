@@ -16,10 +16,19 @@
     let strip = null, stripIcons = [], stopWatch = null, stopFrame = null, hideStyle = null, sidebarDone = false, ccStyle = null;
 
     /* ---------- tab strip: pinned own-channel chat + open chats, reorderable ---------- */
-    let pinIcon = null, prevKeys = null, drag = null, pending = false, dragEndAt = 0, dropLine = null;
+    let prevKeys = null, drag = null, pending = false, dragEndAt = 0, dropLine = null;
+    /* round picture before the title: the client's own channel icon / avatar when there is one (never a broken image: on a load error
+       the generic icon takes its place), else the generic channel icon (channels) or user icon (chats with a person) */
+    function tabImage(t) {
+      const fallback = () => { const ic = api.icon(t.kind === 'pinned' || !t.isUser ? 'channel' : 'client'); ic.classList.add('lay-tab-icon'); return ic; };
+      if (!t.img) return fallback();
+      const im = api.el('img', { class: 'lay-tab-img', src: t.img, alt: '', draggable: 'false' });
+      im.addEventListener('error', () => im.replaceWith(fallback()), { once: true });
+      return im;
+    }
     function buildTab(t) {
       const kids = [];
-      if (t.kind === 'pinned') { if (!pinIcon) { pinIcon = api.icon('channel'); pinIcon.classList.add('lay-tab-icon'); } kids.push(pinIcon); }
+      kids.push(tabImage(t));
       kids.push(api.el('span', { class: 'lay-tab-title' }, t.title));
       if (t.kind === 'pinned' && t.multi && t.server) kids.push(api.el('span', { class: 'lay-tab-server' }, t.server));
       if (t.unread > 0) kids.push(api.el('span', { class: 'lay-tab-badge' }, t.unread > 99 ? '99+' : String(t.unread)));

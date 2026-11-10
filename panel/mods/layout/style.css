@@ -17,6 +17,7 @@
 .lay-tab-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lay-tab.unread .lay-tab-title { font-weight: 600; }
 .lay-tab-icon { flex: 0 0 auto; display: inline-flex; width: 18px; height: 18px; }
+.lay-tab-img { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; object-fit: cover; background: var(--mods-field-bg); }
 .lay-tab-badge { flex: 0 0 auto; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 5px; border-radius: 9px; background: var(--mods-accent); color: var(--mods-accent-fg); font-size: 11px; line-height: 18px; text-align: center; }
 .lay-tab-x { flex: 0 0 auto; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--mods-muted); font-size: 16px; line-height: 20px; cursor: pointer; }
 .lay-tab-x:hover { background: var(--mods-hover); color: var(--mods-fg); }

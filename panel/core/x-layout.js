@@ -1,5 +1,5 @@
 /* Core extension file of the "layout" mod (panel/mods/layout/). Everything TeamSpeak-specific the mod needs lives here:
- *   api.layout.chats      the own channel's chat (pinned tab) + open chats as plain objects; show / close with the client's own actions
+ *   api.layout.chats      the own channel's chat (pinned tab) + open chats as plain objects (incl. img: the stock avatar / channel icon URL or ''); show / close with the client's own actions
  *   api.layout.frame      the tab zone of the title bar (from the chat pane's content start, never over the central toolbar, to the
  *                         window buttons)
  *   api.layout.sidebar    collapse the left column to its icon column and put it back
@@ -76,6 +76,10 @@
     const cl = it.client, ch = it.channel, h = (cl || ch).sc_handler;
     return (h && h.uuid || '?') + '|' + (cl ? 'u:' + (cl.properties.uniqueIdentifier || cl.identifier) : 'c:' + ch.id);
   }, 'id:' + it.identifier);
+  /* picture of a channel / chat item as the stock avatar component draws it: the item's own `image` is {type:'url', src} for a custom
+     channel icon / a user's avatar (tsic:// URL served from the client's own cache) and null / a placeholder constant otherwise.
+     The stock component appends ts-frame=1 (first frame of animated images). '' = no custom image (the mod draws its own fallback). */
+  const imageOf = o => safe(() => { const i = o && o.image; if (!i || i.type !== 'url' || typeof i.src !== 'string' || !i.src) return ''; return /^tsic:/.test(i.src) ? i.src + (i.src.includes('?') ? '&' : '?') + 'ts-frame=1' : i.src; }, '');
   /* list of tabs: one pinned tab for the own channel's chat of the active server (kind 'pinned'), then one per open chat (kind
      'chat'); the chat item of that same channel is left out (the pinned tab stands for it). Servers are no tabs. */
   function snapshot() {
@@ -83,14 +87,14 @@
     const out = [];
     if (ch) {
       const conns = safe(() => A.get('app.connections').filter(c => c.currentChannelItem).length, 1);
-      out.push({ id: PIN, kind: 'pinned', key: safe(() => conn.serverConnectionHandler.uuid, '?') + '|c:' + ch.id, title: String(safe(() => ch.displayName, '') || ''), server: String(safe(() => conn.displayName, '') || ''),
+      out.push({ id: PIN, kind: 'pinned', key: safe(() => conn.serverConnectionHandler.uuid, '?') + '|c:' + ch.id, title: String(safe(() => ch.displayName, '') || ''), img: imageOf(ch), server: String(safe(() => conn.displayName, '') || ''),
         multi: conns > 1, unread: safe(() => +conn.unreadChannelMessageCount || 0, 0),
         active: safe(() => conn.activeDetailItem === ch && ch.lastContentModeKey === 'Chat' && a.currentActivity === conn && !a.hasSlideoverVisible, false), closable: false });
     }
     for (const it of items()) {
       if (it.type === 'connection' || (ch && safe(() => it.channel === ch, false))) continue;
       out.push({ id: String(it.identifier), kind: 'chat', key: chatKey(it), title: String(safe(() => it.displayName, '') || it.identifier),
-        unread: unreadOf(it), active: !!safe(() => it.isActive, false), closable: true });
+        img: imageOf(it), isUser: !!safe(() => it.client, false), unread: unreadOf(it), active: !!safe(() => it.isActive, false), closable: true });
     }
     return out;
   }
