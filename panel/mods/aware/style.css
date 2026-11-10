@@ -1,0 +1,12 @@
+.aware-badge { display: inline-block; padding: 0 5px; border-radius: 8px; font-size: 10px; line-height: 15px; }
+.aware-badge.talking { background: var(--mods-ok); color: var(--mods-accent-fg); }
+.aware-badge.recent { color: var(--mods-ok); padding: 0; }
+.aware-idle { color: var(--mods-muted); font-style: italic; }
+.aware-pop { position: fixed; top: 44px; right: 12px; z-index: 100000; width: 340px; max-height: 60vh; overflow-y: auto; padding: 8px 10px; border-radius: 6px; color: var(--mods-fg); border: 1px solid var(--mods-line); box-shadow: 0 6px 24px rgba(0, 0, 0, .35); font-size: 12px; }
+.aware-pophead { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 6px; }
+.aware-entry { display: flex; gap: 8px; padding: 3px 0; border-top: 1px solid var(--mods-line); }
+.aware-time { color: var(--mods-muted); font-variant-numeric: tabular-nums; flex: none; }
+.aware-entry.join .aware-text { color: var(--mods-ok); }
+.aware-entry.disconnect .aware-text, .aware-entry.timeout .aware-text { color: var(--mods-warn); }
+.aware-entry.kick .aware-text, .aware-entry.ban .aware-text { color: var(--mods-error); }
+.mods-deco[data-ts6mod="aware"] { flex: 0 0 auto; overflow: visible; align-self: center; margin-left: 4px; }
