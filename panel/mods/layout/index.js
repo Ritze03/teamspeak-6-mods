@@ -99,11 +99,14 @@
       }
       if (d.on || pending) { pending = false; if (strip) { strip.dataset.key = ''; render(); } }
     }
+    let tabsX = +st.get('tabsX', 0) || 0;
     function place() {
       if (!strip) return;
       const r = L.frame.rect(); if (!r || r.right - r.left < 60) { strip.style.display = 'none'; return; }
       const h = Math.min(36, r.height);   // the client's bar height
-      Object.assign(strip.style, { display: '', left: r.left + 'px', width: (r.right - r.left) + 'px', top: (r.top + (r.height - h) / 2) + 'px', height: h + 'px' });
+      if (r.chatLeft != null && r.chatLeft > 0) { const x = Math.round(r.chatLeft); if (x !== tabsX) { tabsX = x; st.set('tabsX', x); } }   // measured only off a visible chat pane
+      const left = Math.min(Math.max(r.left, tabsX || 0), r.right - 60);   // no chat pane (Settings, Dashboard): keep the last chat x
+      Object.assign(strip.style, { display: '', left: left + 'px', width: (r.right - left) + 'px', top: (r.top + (r.height - h) / 2) + 'px', height: h + 'px' });
     }
     function startStrip() {
       if (strip) return;

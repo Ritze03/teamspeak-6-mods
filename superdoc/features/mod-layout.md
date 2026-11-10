@@ -16,8 +16,10 @@ All TeamSpeak names live in `panel/core/x-layout.js` (core extension file, `api.
      is resized, the window resizes, or the sidebar collapses / expands. It never starts left of the central toolbar (AFK, mic,
      speaker, and the net mod's readout when that is set to the top bar) + 12 px; then it starts there instead. The space between the
      toolbar and the strip is untouched title bar, so it still drags the window. Without a chat pane (Dashboard, Settings) the strip
-     starts after the toolbar as before. Narrow window: tabs shrink (chat tabs down to 70 px, the pinned tab to 90 px), then the strip
+     stays at the last x measured off a visible chat pane (`tabsX`, so it does not move when Settings opens, also after a restart
+     into Settings); with no stored value yet it starts after the toolbar. A stale x never lets it overflow the right edge. Narrow window: tabs shrink (chat tabs down to 70 px, the pinned tab to 90 px), then the strip
      scrolls (mouse wheel; the active tab is scrolled into view); under 60 px of room the strip hides.
+     Why (stays put without a chat pane): the user does not want the tabs to jump left when entering Settings.
      Why: the user wants the tabs to read as the chat's tabs ("at the same horizontal coordinate as where the actual chat starts").
    - **First tab = the chat of your current channel** (pinned): channel icon + channel name; click shows that channel's chat (the
      stock "Show current Channel Chat" action); it follows the own channel live (label, target and unread count change on a channel
@@ -56,7 +58,7 @@ All TeamSpeak names live in `panel/core/x-layout.js` (core extension file, `api.
 
 ## Settings (`api.storage`, mod id `layout`; Settings -> Mods -> Layout card -> its page, boxes Tabs, Density, Create Channel button, Hide: <group>)
 
-`chatTabs` (bool), `tabOrder` (array of chat keys `<server uuid>|u:<client unique id>` or `<server uuid>|c:<channel id>`, the saved
+`chatTabs` (bool), `tabsX` (number, last measured chat content x, written by the mod only), `tabOrder` (array of chat keys `<server uuid>|u:<client unique id>` or `<server uuid>|c:<channel id>`, the saved
 order of the chat tabs; written only by a drop or by closing a tab that is in it), `density` (number, percent), `ccStyle` (`vanilla | compact | hidden`, three pills),
 `hide` (`{key: true}`, keys: `announce hostBanner transfer afk join bookmarks dashStart dashPopular dashChats`).
 Defaults: false, `[]`, 100, `vanilla`, `{}`. An old stored `serverTabs` is ignored (server tabs were replaced by the pinned tab).
