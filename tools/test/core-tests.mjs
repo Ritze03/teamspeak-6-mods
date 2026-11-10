@@ -218,6 +218,26 @@ export const tests = [
     await c.assertClean('t-set'); await c.eval(`delete window.__tick; delete window.__scoped; __ts6mod.unregister('t-set')`);
   }],
 
+  ['core: extension file registration (anchors.def + coreApi), as an x-<mod>.js would do it', async c => {
+    // what a panel/core/x-<mod>.js does, injected at runtime; the registrations are permanent in the page, so guard re-runs
+    await c.eval(`(() => { if (window.__tx) return;
+      const A = __ts6mod.anchors; window.__tx = true;
+      A.def('x.test', 'throw-away extension anchor', () => document.body);
+      __ts6mod.coreApi('xtest', (api, track, anchors) => ({ mark: () => { const n = api.el('i'); document.body.append(n); track('xtest-node', () => n.remove()); return anchors.get('x.test') === document.body; } }));
+    })()`);
+    c.assert((await c.eval(`__ts6mod.anchors.check()`)).some(r => r.name === 'x.test' && r.ok), 'extension anchor shows in anchors.check()');
+    await c.eval(reg('t-x', `{ enable(api) { window.__xr = api.xtest.mark(); } }`));
+    await c.enable('t-x');
+    c.equal(await c.eval(`window.__xr`), true, 'extension api works and reaches the extension anchor');
+    c.equal(await c.eval(`__ts6mod.ledger('t-x')`), { 'xtest-node': 1 }, 'resource tracked in the mod ledger');
+    await c.disable('t-x');
+    await c.assertClean('t-x');
+    const err = e => c.eval(`(() => { try { ${e}; return ''; } catch (e) { return e.message; } })()`);
+    c.assert(/already registered/.test(await err(`__ts6mod.coreApi('xtest', () => ({}))`)), 'duplicate namespace throws');
+    c.assert(/built-in/.test(await err(`__ts6mod.coreApi('topBar', () => ({}))`)), 'built-in namespace collision throws');
+    await c.eval(`delete window.__xr; __ts6mod.unregister('t-x')`);
+  }],
+
   ['core: Mods page lists mods with their switch state', async c => {
     await c.openModsPage();
     await c.waitFor(`document.querySelectorAll('.mods-mod').length >= 2`, 'Mods page lists the registered mods');

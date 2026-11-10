@@ -12,8 +12,9 @@ const dirs = d => (existsSync(d) ? readdirSync(d).filter(n => statSync(join(d, n
 
 export function coreFiles(dir = panelDir) {
   const names = readdirSync(join(dir, 'core')).filter(n => n.endsWith('.js'));
-  const first = ['anchors.js', 'core.js'];
-  return [...first.filter(n => names.includes(n)), ...names.filter(n => !first.includes(n)).sort()];
+  const first = ['anchors.js', 'core.js'], x = n => n.startsWith('x-');   // x-<mod>.js (core extension files) load after every built-in file
+  const rest = names.filter(n => !first.includes(n)).sort();
+  return [...first.filter(n => names.includes(n)), ...rest.filter(n => !x(n)), ...rest.filter(x)];
 }
 
 /* [{id, source: 'mod'|'example', dir, js, css}] */

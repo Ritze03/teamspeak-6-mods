@@ -150,6 +150,42 @@ names the resolve to fix in `anchors.js` (the failing selector/path is in its de
 restart, and re-run. Mods and tests should not need changes. `core-tests.mjs` additionally exercises each slot end to end, which
 catches drift that a resolve cannot (e.g. the structure of a menu data object).
 
+## Core extension files (`panel/core/x-<mod>.js`)
+
+Use one when a mod needs a TS name (DOM class, Vue path, bridge call) or a core-level API that the built-in anchors and slots
+lack. Each mod may own exactly one such file; it is a normal core file (an IIFE over `window.__ts6modBoot`), so it may name TS
+internals, and the D18 grep over `panel/mods/` stays empty. It is still part of the anchors module in spirit: the mod owns the file,
+but anything generally useful may later be promoted into `anchors.js` / `slots.js`. Why: parallel mod work must not collide on
+`anchors.js` / `slots.js`.
+
+Load order (`tools/cdp/bundle.mjs:coreFiles`): `anchors.js`, `core.js`, the other built-in files sorted, then every `x-*.js` sorted,
+then the mods. Hot reload (`mods-reload.mjs`, `buildBundle({replace:true})`) picks them up like any core file.
+
+Registration calls:
+
+- `boot.anchors.def(name, desc, resolve, optional)`: a new anchor in the same table as the built-in ones, so
+  `__ts6mod.anchors.check()` and run-all's anchor health check cover it. Also exposed for use in the file: `get`, `tryGet`, `$`, `$$`,
+  `vue`, `cls`, `el`, `wait`, `bridge.call`, `bridge.on`.
+- `boot.core.coreApi(name, (api, track, anchors) => impl)`: adds `api.<name>` to every mod's api (also to `api.scope()` apis).
+  `track(kind, undo)` puts a resource in the calling mod's cleanup ledger, undone on disable, exactly like the built-in slots. The
+  factory runs once per api object and must not create resources itself; do that inside `impl` methods. A name used twice, or equal
+  to a built-in api member, throws.
+
+```js
+(function (boot) {
+  const A = boot.anchors;
+  A.def('net.status', 'connection status vm', () => document.querySelector('.tsv-status')?.__vue__, true);
+  boot.core.coreApi('net', (api, track, anchors) => ({
+    info: () => anchors.get('net.status').info,
+    onChange(cb) { const un = api.events.on('connectStatusChanged', cb); return un; },   // api.events already tracks
+    badge(text) { const n = api.el('span', {}, text); document.body.append(n); return track('net-badge', () => n.remove()); },
+  }));
+})(window.__ts6modBoot);
+```
+
+Test: `tools/test/core-tests.mjs` ("extension file registration") injects the same two calls at runtime and checks anchor listing,
+ledger tracking, clean disable and the collision errors.
+
 ## Tests
 
 `node tools/test/run-all.mjs [--cdp-port 9222] [--control-port 38998] [--examples] [--no-reload] [--only <id>]` (Node 22+, no

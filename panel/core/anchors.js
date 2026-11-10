@@ -350,7 +350,7 @@
   }
 
   boot.anchors = {
-    get, tryGet, check, entries: () => entries.map(e => ({ name: e.name, desc: e.desc, optional: e.optional })), AnchorError,
+    def, get, tryGet, $, $$, check, entries: () => entries.map(e => ({ name: e.name, desc: e.desc, optional: e.optional })), AnchorError,
     ready, isReady, vue, cls, themeTokens, cssSelectors,
     el, wait,
     bridge: { call, getBlob, saveBlob, on: nativeOn, versionInfo },

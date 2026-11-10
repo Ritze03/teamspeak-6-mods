@@ -162,6 +162,17 @@
     return api;
   }
 
+  /* ---------- core extension files (panel/core/x-<mod>.js): api namespaces for every mod ---------- */
+  const apiNames = new Set();
+  function coreApi(name, factory) {   // factory(api, track, anchors) -> impl; runs per mod api (and per api.scope()), so it must not create resources itself
+    if (typeof name !== 'string' || !name || typeof factory !== 'function') throw new Error('coreApi(name, (api, track, anchors) => impl) needs a name and a factory');
+    if (apiNames.has(name)) throw new Error(`api namespace "${name}" already registered by a core extension`);
+    const led = makeLedger();
+    try { if (name in makeApi({ id: '(probe)', scopes: new Set() }, led)) throw new Error(`api namespace "${name}" collides with a built-in api member`); } finally { led.dispose(); }
+    apiNames.add(name);
+    parts.push(api => { api[name] = factory(api, api._track, A); });
+  }
+
   /* ---------- registry ---------- */
   function register(def) {
     if (!def || !def.id || typeof def.enable !== 'function') throw new Error('register({id, title, description, enable(api), disable?(), settings?(api, container)}) needs id and enable');
@@ -256,7 +267,7 @@
     get started() { return started; }, get error() { return startError; },
     isEnabled: id => !!(mods.get(id) && mods.get(id).enabled),
     mods: () => mods, store: () => store, onChange: cb => { changeSubs.add(cb); return () => changeSubs.delete(cb); },
-    addApiPart: p => parts.push(p), makeApi, makeLedger, coreStyle, enableRec, disableRec,
+    addApiPart: p => parts.push(p), coreApi, makeApi, makeLedger, coreStyle, enableRec, disableRec,
     dom: domSubscribe, nativeOn: nativeSubscribe, warn, fire,
     open: () => A.openSettings('TS6Mods'), route: A.route, goto: A.goto, showOwnChannelChat: A.showOwnChannelChat,
   };
