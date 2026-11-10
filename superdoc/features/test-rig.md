@@ -7,6 +7,51 @@ A script-driven, fully loopback setup for proving per-speaker audio processing: 
 Related: [agc.md](agc.md) (the native module the listener preloads, control API),
 [ts6-modding-surface.md](ts6-modding-surface.md) (CDP, page globals, talk-status events, Vue state).
 
+## Rules for every test client (read first)
+
+**Test clients never use the user's real microphone or speakers.** The user is often talking on their real TeamSpeak while
+agents test; an isolated client started on the default audio devices captures the real mic and plays the test channel to the real
+speakers, so the user hears themselves. Why (user rule): "When doing tests with other clients, make sure you mute them so I can
+still talk at normal TeamSpeak speed without hearing myself. Push-to-talk or not having my mic attached is fine too."
+
+- Applies to every test client: isolated modded clients (`TS6MOD_PROFILE_DIR`), second plain clients (`AWARE_P2_CDP`,
+  `TS6MOD_CHAT_CDP2`), rig clients. Never mute or otherwise touch the user's real client (CDP 9222).
+- **`connect_muted:true` in `openConnection` does NOT mute on this build** (both `inputMuted` and `outputMuted` stay false after
+  connecting). Pass it anyway, but mute through the client's own toggles after connecting:
+  `connections[0].serverConnectionHandler.SetClientSelfProperties({inputMuted:true, outputMuted:true})`, then verify
+  `ownClient.properties.inputMuted/outputMuted` are both true.
+- **The app-level mute is not enough.** Measured: a muted client still held a capture stream on the default source and a playback
+  stream on the default sink. So the streams themselves are muted too (`pactl set-source-output-mute` / `set-sink-input-mute`), or
+  the client is routed to null sinks (`PULSE_SOURCE` / `PULSE_SINK`, as the rig does).
+- Talkers come from the rig's WAV files on the `ts6rig_*` null sinks, never from the real mic.
+- Automatic: `tools/test/run-all.mjs` mutes an **isolated** client under test and the second client (both layers, re-applied every
+  500 ms so a reconnect stays muted; throw-away, nothing restored) via `tools/test/mute-test-clients.mjs`; `rig up` routes
+  clients to null sinks, sets the toggles (`rig:rig_mute`: listener mic muted, talkers' playback muted) and audits the result
+  (`rig:audio_audit`). Test clients you start by hand are your job: mute them right after connecting.
+- **Verify**: `tools/rig/audio-audit.mjs <cdp-port>...` lists each client's streams and the device each is on (default: fails
+  when a stream is on a non-`ts6rig_` device; `--strict` lists every stream, flagging those on real devices, `(stream muted)` shows
+  the stream-level mute). By hand: `pactl list short source-outputs` / `sink-inputs` (match the client's pid in
+  `pactl list source-outputs`); no test client may sit on a real device unmuted.
+
+## Hidden test windows
+
+Test clients are real windows. On Hyprland they are kept off the user's desktop on the special workspace `special:ts6test`:
+
+- **Window rule (preferred, from the first frame).** The window class cannot be changed: `--class=` / `--wm-class` have no effect
+  (the client sets its own WM_CLASS; `hyprctl clients -j` still shows `TeamSpeak`). But test clients run with
+  `--ozone-platform=x11` (XWayland) and have class `TeamSpeak`, while the user's real client runs native Wayland with class
+  `com.teamspeak.teamspeak`, so a rule on `class ^TeamSpeak$` + `xwayland` never catches the real client. Lua config (Hyprland 0.56):
+  `hl.window_rule({ match = { class = "^TeamSpeak$", xwayland = true }, workspace = "special:ts6test silent" })`
+  (legacy hyprlang form: `windowrule = match:class ^TeamSpeak$, match:xwayland 1, workspace special:ts6test silent`).
+  Always launch test clients with `--ozone-platform=x11` (already in the launch flags below), or the rule does not apply.
+- **Fallback without the rule**: `tools/rig/hide-client.sh <cdp-port>...` waits for the window and moves it silently
+  (`hl.dsp.window.move`, address-based; no-op without Hyprland, `TS6TEST_WORKSPACE` overrides the name). `rig up` and
+  `run-all` (isolated clients) call it. Without the rule the window shows on the desktop briefly (a few hundred ms to the
+  next 0.5 s poll) before it moves.
+- Why a rule and not `hyprctl dispatch exec "[workspace ...]"`: that makes Hyprland the parent of the client, outside
+  `claude.slice`; clients must start through `ccorral --`.
+- Hidden windows still render for the tests (the four launch flags keep the page alive); run-all passes with the clients parked.
+
 ## Why (decision D13)
 
 - The real server's bots are silent, and per-speaker work needs **known talkers on demand** (bursty speech, quiet speech,
