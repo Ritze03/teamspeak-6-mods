@@ -101,6 +101,23 @@ ts6dsp *ts6dsp_create(int sr, int ch, const ts6dsp_params *pp) {
     return s;
 }
 
+void ts6dsp_reset(ts6dsp *s) {
+    if (!s) return;
+    const int ch = s->ch, L = s->L;
+    memset(s->xd, 0, (size_t)L * (size_t)ch * sizeof(float));
+    memset(s->yd, 0, (size_t)L * (size_t)ch * sizeof(float));
+    for (int i = 0; i < L; i++) s->mnr[i] = 1.0f;
+    s->msum = L; s->mpos = 0; s->dpos = 0;
+    s->dq_head = 0; s->dq_cnt = 0;
+    s->ms = 1e-20f; s->lg = 0.f; s->env = 0.f; s->gr = 0.f;
+    s->mk = s->p.makeup_db; s->lr = 1.0f;
+    s->mix = s->mix_t = s->p.enabled ? 1.0f : 0.0f;
+    s->n = 0;
+    atomic_store_explicit(&s->m_in, -120.f, memory_order_relaxed);
+    atomic_store_explicit(&s->m_gr, 0.f, memory_order_relaxed);
+    atomic_store_explicit(&s->m_lg, 0.f, memory_order_relaxed);
+}
+
 void ts6dsp_destroy(ts6dsp *s) {
     if (!s) return;
     free(s->xd); free(s->yd); free(s->dq_v); free(s->dq_i); free(s->mnr);

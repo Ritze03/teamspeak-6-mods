@@ -26,6 +26,9 @@
 #include <time.h>
 #include <unistd.h>
 #include "dsp/ts6dsp.h"
+#include "ts6hook.h"
+
+void ts6hook_sweep(void);   /* implemented in ts6hook.c */
 
 #define EXPORT __attribute__((visibility("default")))
 #define VERSION "0.1.0"
@@ -67,6 +70,13 @@ static void logf_(const char *fmt, ...) {
     if (fd >= 0) { if (write(fd, b, (size_t)n) < 0) {} close(fd); }
 }
 
+/* exported so ts6hook.c can share the same log file */
+void ts6mod_log(const char *fmt, ...) {
+    if (!g_logpath[0]) return;
+    char b[640]; va_list ap; va_start(ap, fmt); vsnprintf(b, sizeof b, fmt, ap); va_end(ap);
+    logf_("%s", b);
+}
+
 static void mkdir_p(const char *path) {
     char t[512]; snprintf(t, sizeof t, "%s", path);
     for (char *p = t + 1; *p; p++) if (*p == '/') { *p = 0; mkdir(t, 0755); *p = '/'; }
@@ -83,13 +93,18 @@ static void init_paths(void) {
 }
 
 /* ---------- config ---------- */
-typedef struct { int enabled; int dashboard_button; ts6dsp_params p; char preset[32]; float strength; } cfg_t;  /* dashboard_button: UI-only mod switch, stored here so all mod switches live in one file */
+/* mode: "whole" = whole-stream DSP at pa_stream_write (default); "per_speaker" = per-sender hook
+ * (native/ts6hook.c), whole-stream path then passes through. `enabled` is the master switch. */
+typedef struct { int enabled; char mode[16]; ts6dsp_params p; char preset[32]; float strength; } cfg_t;
 static cfg_t g_cfg;
 static pthread_mutex_t g_ctl = PTHREAD_MUTEX_INITIALIZER; /* control paths only; the audio thread never takes it */
+
+static int mode_is_per_speaker(void) { return !strcmp(g_cfg.mode, "per_speaker"); }
 
 static void cfg_default(cfg_t *c) {
     memset(c, 0, sizeof *c);
     ts6dsp_default_params(&c->p);
+    snprintf(c->mode, sizeof c->mode, "whole");
     snprintf(c->preset, sizeof c->preset, "balanced"); c->strength = 50.f;
 }
 
@@ -136,24 +151,28 @@ static ts6dsp *make_dsp(stream_t *st) {   /* caller holds g_ctl */
     return d;
 }
 
-/* bring every stream in line with g_cfg (control thread / registration); caller holds g_ctl */
+/* bring every stream in line with g_cfg (control thread / registration); caller holds g_ctl.
+ * Whole-stream processing runs only in mode "whole"; mode "per_speaker" drives native/ts6hook.c
+ * instead and the whole-stream path passes through. */
 static void apply_locked(void) {
-    if (!g_cfg.enabled) {
+    int whole_on = g_cfg.enabled && !mode_is_per_speaker();
+    if (!whole_on) {
         atomic_store(&g_enabled, 0);
         for (int i = 0; i < MAX_STREAMS; i++) { retire(atomic_exchange(&g_st[i].dsp, NULL)); }
-        return;
+    } else {
+        for (int i = 0; i < MAX_STREAMS; i++) {
+            stream_t *st = &g_st[i];
+            if (!atomic_load(&st->key) || (st->fmt != FMT_S16LE && st->fmt != FMT_F32LE)) continue;
+            ts6dsp *d = atomic_load(&st->dsp);
+            ts6dsp_params p = g_cfg.p; p.enabled = 1;
+            if (!d || fabsf(st->la_ms - p.lookahead_ms) > 0.01f) {
+                ts6dsp *n = make_dsp(st);
+                if (n) retire(atomic_exchange(&st->dsp, n)); else logf_("ts6dsp_create failed (rate=%d ch=%d)", st->rate, st->ch);
+            } else ts6dsp_set_params(d, &p);
+        }
+        atomic_store(&g_enabled, 1);
     }
-    for (int i = 0; i < MAX_STREAMS; i++) {
-        stream_t *st = &g_st[i];
-        if (!atomic_load(&st->key) || (st->fmt != FMT_S16LE && st->fmt != FMT_F32LE)) continue;
-        ts6dsp *d = atomic_load(&st->dsp);
-        ts6dsp_params p = g_cfg.p; p.enabled = 1;
-        if (!d || fabsf(st->la_ms - p.lookahead_ms) > 0.01f) {
-            ts6dsp *n = make_dsp(st);
-            if (n) retire(atomic_exchange(&st->dsp, n)); else logf_("ts6dsp_create failed (rate=%d ch=%d)", st->rate, st->ch);
-        } else ts6dsp_set_params(d, &p);
-    }
-    atomic_store(&g_enabled, 1);
+    ts6hook_set_config(&g_cfg.p, g_cfg.enabled && mode_is_per_speaker());
 }
 
 static void register_stream(void *s) {
@@ -344,7 +363,7 @@ static int jstr(const char *b, const char *key, char *out, size_t cap) {
 static void cfg_apply_json(cfg_t *c, const char *b) {
     int i; float f; char s[32];
     if (jbool(b, "enabled", &i)) c->enabled = i;
-    if (jbool(b, "dashboard_button", &i)) c->dashboard_button = i;
+    if (jstr(b, "mode", s, sizeof s)) { if (!strcmp(s, "whole")) snprintf(c->mode, sizeof c->mode, "whole"); else if (!strcmp(s, "per_speaker")) snprintf(c->mode, sizeof c->mode, "per_speaker"); }
     if (jnum(b, "target_db", &f)) c->p.target_db = f;
     if (jnum(b, "max_gain_db", &f)) c->p.max_gain_db = f;
     if (jnum(b, "gate_db", &f)) c->p.gate_db = f;
@@ -363,10 +382,10 @@ static void cfg_apply_json(cfg_t *c, const char *b) {
 static int cfg_json(const cfg_t *c, char *o, size_t cap) {
     const ts6dsp_params *p = &c->p;
     return snprintf(o, cap,
-        "{\"enabled\":%s,\"dashboard_button\":%s,\"preset\":\"%s\",\"strength\":%.1f,\"target_db\":%.2f,\"max_gain_db\":%.2f,\"gate_db\":%.2f,"
+        "{\"enabled\":%s,\"mode\":\"%s\",\"preset\":\"%s\",\"strength\":%.1f,\"target_db\":%.2f,\"max_gain_db\":%.2f,\"gate_db\":%.2f,"
         "\"threshold_db\":%.2f,\"ratio\":%.2f,\"knee_db\":%.2f,\"attack_ms\":%.2f,\"release_ms\":%.2f,"
         "\"makeup_db\":%.2f,\"lookahead_ms\":%.2f,\"ceiling_db\":%.2f}",
-        c->enabled ? "true" : "false", c->dashboard_button ? "true" : "false", c->preset, c->strength, p->target_db, p->max_gain_db, p->gate_db, p->threshold_db,
+        c->enabled ? "true" : "false", c->mode, c->preset, c->strength, p->target_db, p->max_gain_db, p->gate_db, p->threshold_db,
         p->ratio, p->knee_db, p->attack_ms, p->release_ms, p->makeup_db, p->lookahead_ms, p->ceiling_db);
 }
 
@@ -404,8 +423,13 @@ static void cfg_clamp(cfg_t *c) {
 static float to_db(float lin) { return lin < 1e-6f ? -120.f : 20.f * log10f(lin); }
 
 static int status_json(char *o, size_t cap) {
-    int n = snprintf(o, cap, "{\"module\":\"ts6mod\",\"version\":\"" VERSION "\",\"pid\":%d,\"enabled\":%s,\"mode\":\"%s\",\"config_file\":\"%s\",\"hooked\":[",
-                     getpid(), g_cfg.enabled ? "true" : "false", atomic_load(&g_enabled) ? "processing" : "passthrough", g_cfgpath);
+    int hk_inst, hk_act, hk_cnt; uint64_t hk_addr; float hk_lat;
+    ts6hook_status(&hk_inst, &hk_addr, &hk_act, &hk_cnt, &hk_lat);
+    int n = snprintf(o, cap, "{\"module\":\"ts6mod\",\"version\":\"" VERSION "\",\"pid\":%d,\"enabled\":%s,\"mode\":\"%s\",\"config_mode\":\"%s\","
+                     "\"per_speaker\":{\"hook_installed\":%s,\"hook_addr\":\"0x%llx\",\"active\":%s,\"speakers\":%d,\"added_latency_ms\":%.2f},"
+                     "\"config_file\":\"%s\",\"hooked\":[",
+                     getpid(), g_cfg.enabled ? "true" : "false", atomic_load(&g_enabled) ? "processing" : "passthrough", g_cfg.mode,
+                     hk_inst ? "true" : "false", (unsigned long long)hk_addr, hk_act ? "true" : "false", hk_cnt, hk_lat, g_cfgpath);
     int first = 1;
     for (size_t i = 0; i < sizeof g_hooks / sizeof *g_hooks; i++) if (atomic_load(&g_hooked[i])) { n += snprintf(o + n, cap - (size_t)n, "%s\"%s\"", first ? "" : ",", g_hooks[i].name); first = 0; }
     n += snprintf(o + n, cap - (size_t)n, "],\"streams\":[");
@@ -438,6 +462,35 @@ static int meters_json(char *o, size_t cap) {
     }
     return snprintf(o, cap, "{\"active\":%s,\"in_db\":%.1f,\"gain_reduction_db\":%.2f,\"leveler_gain_db\":%.2f,\"in_peak_db\":%.2f,\"out_peak_db\":%.2f}",
                     active ? "true" : "false", in, gr, lg, to_db(ipk), to_db(pk));
+}
+
+/* parse the body of POST /speaker into a ts6hook_override. Returns 1 if the "override" field was
+ * present (object or null), 0 otherwise. Nested objects are parsed by handing jfind/jnum the
+ * substring that starts at the sub-object (flat objects, which is all the panel sends). */
+static int parse_override(const char *body, ts6hook_override *ov) {
+    memset(ov, 0, sizeof *ov);
+    const char *o = jfind(body, "override");
+    if (!o) return 0;
+    if (!strncmp(o, "null", 4)) { ov->clear = 1; return 1; }
+    if (*o != '{') return 0;
+    int i; float f;
+    if (jbool(o, "enabled", &i)) { ov->has_enabled = 1; ov->enabled = i; }
+    if (jnum(o, "gain_db", &f)) { ov->has_gain = 1; ov->gain_db = f; }
+    const char *p = jfind(o, "params");
+    if (p && *p == '{') {
+        ts6dsp_default_params(&ov->params);
+        if (jnum(p, "target_db", &f))    { ov->params.target_db = f;    ov->param_mask |= TPM_TARGET; }
+        if (jnum(p, "max_gain_db", &f))  { ov->params.max_gain_db = f;  ov->param_mask |= TPM_MAXGAIN; }
+        if (jnum(p, "gate_db", &f))      { ov->params.gate_db = f;      ov->param_mask |= TPM_GATE; }
+        if (jnum(p, "threshold_db", &f)) { ov->params.threshold_db = f; ov->param_mask |= TPM_THRESHOLD; }
+        if (jnum(p, "ratio", &f))        { ov->params.ratio = f;        ov->param_mask |= TPM_RATIO; }
+        if (jnum(p, "knee_db", &f))      { ov->params.knee_db = f;      ov->param_mask |= TPM_KNEE; }
+        if (jnum(p, "attack_ms", &f))    { ov->params.attack_ms = f;    ov->param_mask |= TPM_ATTACK; }
+        if (jnum(p, "release_ms", &f))   { ov->params.release_ms = f;   ov->param_mask |= TPM_RELEASE; }
+        if (jnum(p, "makeup_db", &f))    { ov->params.makeup_db = f;    ov->param_mask |= TPM_MAKEUP; }
+        if (jnum(p, "ceiling_db", &f))   { ov->params.ceiling_db = f;   ov->param_mask |= TPM_CEILING; }
+    }
+    return 1;
 }
 
 static int origin_ok(const char *req, char *origin, size_t cap) {
@@ -481,6 +534,21 @@ static void handle(int c) {
     if (!strcmp(method, "OPTIONS")) { respond(c, 204, origin, "", 0); return; }
     if (!strcmp(path, "/status") && !strcmp(method, "GET")) { n = status_json(out, sizeof out); respond(c, 200, origin, out, n); }
     else if (!strcmp(path, "/meters") && !strcmp(method, "GET")) { n = meters_json(out, sizeof out); respond(c, 200, origin, out, n); }
+    else if (!strcmp(path, "/speakers") && !strcmp(method, "GET")) {
+        static char sbuf[8192]; static pthread_mutex_t sl = PTHREAD_MUTEX_INITIALIZER;
+        pthread_mutex_lock(&sl); n = ts6hook_speakers_json(sbuf, sizeof sbuf); respond(c, 200, origin, sbuf, n); pthread_mutex_unlock(&sl);
+    }
+    else if (!strcmp(path, "/speaker") && !strcmp(method, "POST")) {
+        float cidf = 0, schidf = 0; ts6hook_override ov;
+        if (!jnum(body, "client_id", &cidf) || cidf < 1) { respond(c, 400, origin, "{\"error\":\"client_id required\"}", 30); return; }
+        jnum(body, "schid", &schidf);
+        if (!parse_override(body, &ov)) { respond(c, 400, origin, "{\"error\":\"override required\"}", 28); return; }
+        pthread_mutex_lock(&g_ctl);
+        ts6hook_set_override((uint32_t)cidf, (int)schidf, &ov);
+        pthread_mutex_unlock(&g_ctl);
+        n = snprintf(out, sizeof out, "{\"ok\":true,\"client_id\":%u}", (uint32_t)cidf);
+        respond(c, 200, origin, out, n);
+    }
     else if (!strcmp(path, "/config") && (!strcmp(method, "GET") || !strcmp(method, "POST"))) {
         pthread_mutex_lock(&g_ctl);
         if (method[0] == 'P') {
@@ -513,6 +581,7 @@ static void *server_thread(void *arg) {
         struct pollfd pf = { s, POLLIN, 0 };
         if (poll(&pf, 1, 500) > 0) { int c = accept4(s, 0, 0, SOCK_CLOEXEC); if (c >= 0) { handle(c); close(c); } }
         sweep_retired();
+        ts6hook_sweep();
     }
     return NULL;
 }
@@ -539,6 +608,8 @@ __attribute__((constructor)) static void ts6mod_init(void) {
     cfg_load(); cfg_clamp(&g_cfg);
     atomic_store(&g_enabled, 0);
     atomic_store(&g_active, 1);
+    /* install the per-speaker hook now if the saved config already has it on (lazy otherwise) */
+    if (g_cfg.enabled && mode_is_per_speaker()) ts6hook_set_config(&g_cfg.p, 1);
     logf_("ts6mod " VERSION " loaded in main process (ppid=%d)", getppid());
     pthread_t t;
     if (pthread_create(&t, NULL, server_thread, NULL) == 0) pthread_detach(t); else logf_("pthread_create failed");

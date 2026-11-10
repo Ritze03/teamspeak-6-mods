@@ -34,6 +34,10 @@ ts6dsp *ts6dsp_create(int sample_rate, int channels, const ts6dsp_params *p);
 /* Safe to call from one control thread while another runs process(); applied at the next block
  * boundary. Values are clamped to their ranges. lookahead_ms is ignored here (fixed at create). */
 void    ts6dsp_set_params(ts6dsp *s, const ts6dsp_params *p);
+/* Clear all runtime state (delay lines, meters, smoothed gains) to the just-created state, keeping
+ * the allocations, sample_rate/channels and current params. No allocation; safe to call from the
+ * audio thread. Used to repurpose a pooled instance for a new speaker (see per-speaker-hook.md). */
+void    ts6dsp_reset(ts6dsp *s);
 void    ts6dsp_process_f32(ts6dsp *s, float *interleaved, int frames);
 void    ts6dsp_process_s16(ts6dsp *s, int16_t *interleaved, int frames);
 int     ts6dsp_latency_frames(const ts6dsp *s);
