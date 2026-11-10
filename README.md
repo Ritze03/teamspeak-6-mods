@@ -31,6 +31,12 @@ Details per mod: `superdoc/features/` (`agc.md`, `mod-*.md`, `mods-panel.md`).
 - `gcc` (or another C compiler) and `make`
 - Audio mod: the client must play through PulseAudio or PipeWire's pulse layer (`pipewire-pulse`)
 
+## Quick start
+
+With [ritz-get](https://github.com/Ritze03/ritz-get): `ritz-get install teamspeak-6-mods`, then start `teamspeak-6-mods`.
+Without it: `./install.sh --install` (builds the native module into `build/` and links `~/.local/bin/teamspeak-6-mods`;
+`./install.sh --remove` undoes it, config stays). Or build and start by hand:
+
 ## Build and start
 
 ```
@@ -43,7 +49,7 @@ Anything after `launcher/ts6-mod` is passed to the client (for example a `ts3ser
 `TS6MOD_PROFILE_DIR` (separate profile for a second client), `TS6MOD_EXAMPLES=1` (also load the sample plugins).
 The debug and control ports listen on loopback only. Closing the client ends the launcher.
 
-Desktop entry: copy `launcher/ts6-mod.desktop` to `~/.local/share/applications/`, replace `<repo>` with the absolute path of this checkout.
+Desktop entry: `teamspeak-6-mods.desktop` in the repo root (ritz-get installs it as a shortcut on request; by hand, copy it to `~/.local/share/applications/`).
 
 ## Using it
 

@@ -8,7 +8,7 @@ details: [agc.md](agc.md), [mods-panel.md](mods-panel.md), [mod-net.md](mod-net.
 ## Start modded, get back to vanilla
 
 - Close the TeamSpeak client, then run `launcher/ts6-mod` from the repo root (or start the "TeamSpeak (modded)" desktop entry built from
-  `launcher/ts6-mod.desktop`). Optional: a server URL after the command to auto-connect.
+  `teamspeak-6-mods.desktop`). Optional: a server URL after the command to auto-connect.
 - Open **Settings -> Mods**. All mods start **off**; switch on the one you test.
 - Back to vanilla: switch every mod off, or close the client and start it the normal way (without the launcher).
 - Set-up for most items: connect to a server and have at least one other person (or a second client) in your channel.

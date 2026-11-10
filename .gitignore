@@ -11,3 +11,4 @@ native/build/
 native/dsp/test_ts6dsp
 native/dsp/wavproc
 .claude/teamlead/
+/build/
