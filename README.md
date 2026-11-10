@@ -1,94 +1,70 @@
+<img src="icon.png" width="96" align="right" alt="">
+
 # teamspeak-6-mods
 
-Opt-in mods for the **TeamSpeak 6 client on Linux**. Nothing in the client is patched: a small native module is preloaded
-into the client process (audio), and a launcher injects a "Mods" page and the UI mods through the client's local debug port.
-Every mod has its own switch and is **off by default**. With everything off, the client behaves like the stock one.
+Opt-in mods for the stock **TeamSpeak 6 client on Linux**. Every mod has its own switch and is **off by default**; with
+everything off you get the normal client.
 
-> **Terms of service.** Modifying the client may violate TeamSpeak's terms of service (the community installer for TS6 mods states
-> that modifications violate the ToS since beta5). This project patches no client files, but it still changes the client's
-> behaviour at runtime. Use it at your own risk.
+## How it works
+
+```
+teamspeak-6-mods (launcher/ts6-mod)
+ ├─ starts the stock TeamSpeak client, unchanged, with a small native library preloaded (LD_PRELOAD)
+ │    └─ processes the audio you hear: compressor / limiter on the whole mix, or on each speaker
+ │       separately (via a hook on the client's per-sender audio)
+ └─ a Node script injects the JS mod framework into the client's UI over the Chrome DevTools Protocol
+      └─ the mods show up in Settings → Mods
+```
+
+No TeamSpeak files are modified; everything is added at runtime and disappears when you close the client.
+
+## Install
+
+Quick: `ritz-get install teamspeak-6-mods`
+
+Manual: needs Linux, the TeamSpeak 6 client (tested with 6.0.0-beta5.1 in `/opt/teamspeak`; otherwise set `TS6MOD_TS_BIN`),
+Node.js 22+, `gcc` and `make`, and PulseAudio or PipeWire's pulse layer for the audio mod. Then run:
+
+```
+./install.sh --install     # builds the native library, links ~/.local/bin/teamspeak-6-mods
+./install.sh --remove      # undoes it
+```
+
+For development, `make -C native` and `launcher/ts6-mod` work straight from the repo.
+
+## Use
+
+Run `teamspeak-6-mods` (TeamSpeak must not already be running). Open **Settings → Mods**: each mod is a card with a switch;
+switch it on and open the card for its settings. To go back to normal, switch the mods off or start TeamSpeak the usual way.
 
 ## Mods
 
 | Mod | What it does |
 |---|---|
-| **audio** | Automatic gain control (leveler, compressor, limiter) on the whole output or on each speaker separately, with presets, per-user volume, mute, boost and per-user AGC overrides |
-| **dashboard** | Direct Dashboard (start page) button in the left icon column |
-| **net** | Top-bar ping / packet-loss HUD with a history popover, diagnostics copy and optional alerts |
-| **power** | Copy-ID entries in the right-click menus, command palette (Ctrl+K), unlocker for hidden developer toggles |
-| **aware** | Channel activity badges, optional idle times, join / leave feed |
-| **layout** | Chat and server tabs in the title bar, row density slider, switches to hide clutter |
-| **theme** | Theme picker, one-click reload and live reload of the active extension theme |
-| **chat** | Splits long messages (fence-safe for code blocks) and raises the input limit |
-| **files** | Compresses large images before upload (chat and channel Files tab) |
+| Audio | Automatic gain control (leveler, compressor, limiter), whole stream or per speaker, presets, per-user volume |
+| Dashboard button | Direct button for the Dashboard (start page) |
+| Connection quality | Ping / packet-loss readout in the top bar |
+| Power tools | Copy-ID menu entries, command palette (Ctrl+K), hidden developer toggles |
+| Server awareness | Talking badges on channels, idle times, join / leave feed |
+| Layout | Chat and server tabs in the title bar, row density, hide clutter |
+| Theme tools | Theme picker, one-click reload, live reload of the active theme |
+| Split long messages | Splits long chat messages and raises the input limit |
+| Compress images | Shrinks large images before upload |
 
-Details per mod: `superdoc/features/` (`agc.md`, `mod-*.md`, `mods-panel.md`).
+## Your own mods
 
-## Requirements
+A mod is a folder with an `index.js` using a small API: [superdoc/features/ts6-mod-api.md](superdoc/features/ts6-mod-api.md).
 
-- Linux; TeamSpeak 6 client installed (tested with `6.0.0-beta5.1`; default path `/opt/teamspeak/TeamSpeak`, else set `TS6MOD_TS_BIN`)
-- Node.js 22 or newer
-- `gcc` (or another C compiler) and `make`
-- Audio mod: the client must play through PulseAudio or PipeWire's pulse layer (`pipewire-pulse`)
+## After a TeamSpeak update
 
-## Quick start
+Start the modded client and run `node tools/test/run-all.mjs`; it checks the UI anchors and the native audio signature and says what
+needs fixing (see the docs).
 
-With [ritz-get](https://github.com/Ritze03/ritz-get): `ritz-get install teamspeak-6-mods`, then start `teamspeak-6-mods`.
-Without it: `./install.sh --install` (builds the native module into `build/` and links `~/.local/bin/teamspeak-6-mods`;
-`./install.sh --remove` undoes it, config stays). Or build and start by hand:
+## Terms of service
 
-## Build and start
+Modifying the client may violate TeamSpeak's terms of service. This project patches no files, but it changes the client's behaviour
+at runtime. Use it at your own risk.
 
-```
-make -C native                 # builds native/libts6mod.so (the launcher also does this on first start)
-launcher/ts6-mod               # starts the client with the module and the mods; close a running client first
-```
+## More
 
-Anything after `launcher/ts6-mod` is passed to the client (for example a `ts3server://<server>` URL). Environment variables:
-`TS6MOD_TS_BIN` (client binary), `TS6MOD_CDP_PORT` (debug port, default 9222), `TS6MOD_PORT` (native control port, default 38998),
-`TS6MOD_PROFILE_DIR` (separate profile for a second client), `TS6MOD_EXAMPLES=1` (also load the sample plugins).
-The debug and control ports listen on loopback only. Closing the client ends the launcher.
-
-Desktop entry: `teamspeak-6-mods.desktop` in the repo root (ritz-get installs it as a shortcut on request; by hand, copy it to `~/.local/share/applications/`).
-
-## Using it
-
-Open **Settings -> Mods**. Every mod is a card with a switch; switch it on and its settings appear underneath. Settings apply live and are
-remembered. A step-by-step check of every mod is in [superdoc/features/testing-guide.md](superdoc/features/testing-guide.md).
-
-## Turning it all off
-
-- Switch the mods off on the Mods page: the added UI, timers, requests and audio processing disappear (the "Mods" entry in Settings stays).
-- Or start the client the normal way (not through `launcher/ts6-mod`): the module is not loaded and nothing is injected, so it is the stock client.
-- To reset the native audio config, delete `$XDG_CONFIG_HOME/ts6-mods/` (default `~/.config/ts6-mods/`) while the client is closed.
-
-## Write your own plugin
-
-A mod is a folder `panel/mods/<name>/` with an `index.js` that calls `ts6mod.register(...)` and uses a small semantic API (top bar buttons,
-context-menu items, tree row decorations, settings widgets, ...); cleanup on switch-off is automatic and TeamSpeak internals stay in one file.
-Walkthrough, API reference and tests: [superdoc/features/ts6-mod-api.md](superdoc/features/ts6-mod-api.md) ("How to build your own mod").
-Sample plugins: `panel/examples/` (load with `TS6MOD_EXAMPLES=1 launcher/ts6-mod`).
-
-## Checks and after a TeamSpeak update
-
-```
-make -C native/dsp test                  # DSP unit tests (no client needed)
-node panel/mods/chat/split.test.mjs      # chat splitter unit tests (no client needed)
-native/test/sigscan.sh                   # does the installed client still match the per-speaker hook signature?
-node tools/cdp/cdp.mjs list              # is a modded client reachable on the debug port?
-node tools/test/run-all.mjs              # everything, against the running modded client
-```
-
-`run-all.mjs` has no `--help`: any run starts the full test suite against the client on `--cdp-port` (default 9222). It first hot-replaces
-the panel code in that client with the files on disk (`--no-reload` skips this), switches mods on and off in memory and restores them, and only
-sends test messages when connected to a local (127.0.0.1) server (options: `--only <mod>`, `--examples`, `--cdp-port`, `--control-port`).
-
-After a client update: start with `launcher/ts6-mod`, run `native/test/sigscan.sh` and `node tools/test/run-all.mjs`. A failing anchor names the
-selector or path to fix in `panel/core/anchors.js`; a signature scan with no single match means the per-speaker hook signature in `native/ts6hook.c`
-needs updating (until then the audio mod's per-speaker mode stays off and audio is untouched). See `superdoc/features/per-speaker-hook.md`.
-
-## Repository layout
-
-`native/` (preload module, per-speaker hook, DSP) - `launcher/` (start script, desktop entry) - `tools/` (CDP injector, test runner, audio rig) -
-`panel/core/` (mod framework) - `panel/mods/` (the mods) - `panel/examples/` (sample plugins) - `superdoc/` (documentation; start with
-`superdoc/architecture/overview.md`).
+[Testing guide](superdoc/features/testing-guide.md) · [Docs overview](superdoc/architecture/overview.md)
