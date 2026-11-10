@@ -62,12 +62,14 @@ Known limits: whole mode shares one gain for all speakers; enabling processing a
 
 Needs a server connection.
 
-1. Switch on. Expect: a HUD in the top bar next to the mic and speaker buttons with `<n> ms`, `<n> %` and data rate; hidden when not connected.
-2. Click it. Expect: a popover with a 60 s graph, ping now/jitter/min/avg/max, loss, bandwidth, codec and channel. Escape or a click outside closes it.
+1. Switch on. Expect: a ping/loss readout (plus data rate) inside the dark connection-status pill at the bottom of the channel tree, left of the bars icon;
+   hidden when not connected. Drag the tree pane to its minimum width: ping and loss stay visible and the stock icons are not pushed out.
+2. Click it. Expect: a popover opening above it, with a 60 s graph, ping now/jitter/min/avg/max, loss, bandwidth, codec and channel. Escape or a click outside closes it.
 3. Press "Copy diagnostics" and paste somewhere. Expect: a text block with versions, ping, loss and codec; the button says "Copied".
-4. In the settings turn "Show bandwidth" off, then enable Alerts with a low ping limit (30 ms). Expect: the HUD loses the rate part; a notification
+4. In the settings turn "Show bandwidth" off, then enable Alerts with a low ping limit (30 ms). Expect: the readout loses the rate part; a notification
    appears once and does not repeat for a minute.
-5. Switch off. Expect: HUD and popover gone.
+5. Settings -> Position "Top bar". Expect: the readout moves next to the mic and speaker buttons; setting it back returns it to the status pill.
+6. Switch off. Expect: readout and popover gone.
 
 ## power
 
@@ -83,7 +85,8 @@ Needs a server connection.
 
 1. Switch on. Expect: when someone in another channel talks (or types), their talk circle in the tree lights up like a talker in
    your own channel, within about one request interval (5 s by default), and goes off again after the activity. People in your own
-   channel behave exactly as stock. No badge or dot appears on channel rows.
+   channel behave exactly as stock. The channel-row talking badge is gone. The circle is lit while the person's idle time is under 1 s (one person
+   checked per 5 s by default), and typing a chat message lights it too. The setting is "Show talking in other channels (from idle time)".
 2. Look at the top bar. Expect: a join/leave feed button; ask someone to join, move, leave. The list shows time, nickname and from -> to.
 3. Turn on the idle probe (off by default; it shares the one request per interval with the talk circles). Expect: users in expanded channels who were idle for over a minute get an
    `idle 12m` style label that keeps growing.
@@ -97,8 +100,14 @@ All sub-features start off after enabling the mod.
    left column collapsed to its icon column; switching off restores the previous column.
 2. "Server tabs" (own switch): connect two servers. Expect: one tab per server in front of the chat tabs, no x.
 3. Density slider: move 60 to 140 %. Expect: tree rows get smaller/larger live; 100 is exactly vanilla.
-4. Hide switches: try each (announcement bar, banner card, File Transfer Info card, Create Channel, AFK, Create a TeamSpeak Community, Bookmarks,
+4. Hide switches: try each (announcement bar, banner card, File Transfer Info card, AFK, Create a TeamSpeak Community, Bookmarks,
    Dashboard banner / Popular Servers / Chats). Expect: exactly that element disappears, and comes back when switched off.
+5. "Create Channel button" style, with the tree pane at its minimum width where the button folds:
+   - Vanilla: the stock pill; folded it is a round circle (not a stadium) and hovering shows "Create Channel".
+   - Compact: a circle at any width; clicking opens Create Channel.
+   - Hidden: gone.
+   - Mod off: the stock stadium again.
+   - A profile that had "Hide: Create Channel button" on opens with style Hidden.
 
 ## theme
 
@@ -140,9 +149,9 @@ Note: the result has no EXIF or GPS data (always stripped).
 
 ## Looks right in default and your own themes
 
-Switch themes (Settings -> Appearance, or the theme mod's picker) and look at the Mods page and every visible piece: net HUD and popover, aware talk circles
+Switch themes (Settings -> Appearance, or the theme mod's picker) and look at the Mods page and every visible piece: net readout and popover, aware talk circles
 and feed, layout tabs, power palette, audio popover, toasts. Expect: text readable, colours follow the theme (mods use the theme's own colours),
-nothing clipped or overlapping in either the default theme or your extension themes; also at a narrow window width (the net HUD is the widest piece:
+nothing clipped or overlapping in either the default theme or your extension themes; also at a narrow window width (the net readout is the widest piece:
 turn off its bandwidth part).
 
 Isolated test clients must be launched with `--ozone-platform=x11 --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling` (`tools/rig/rig:CLIENT_FLAGS` passes them). A hidden or backgrounded client never runs `requestAnimationFrame`, so tests that wait on it fail (audio popover closes, layout sidebar collapse, slot modal `close()`, contextMenu item without icon).

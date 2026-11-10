@@ -29,8 +29,8 @@ still talk at normal TeamSpeak speed without hearing myself. Push-to-talk or not
   clients to null sinks, sets the toggles (`rig:rig_mute`: listener mic muted, talkers' playback muted) and audits the result
   (`rig:audio_audit`). Test clients you start by hand are your job: mute them right after connecting.
 - **Verify**: `tools/rig/audio-audit.mjs <cdp-port>...` lists each client's streams and the device each is on (default: fails
-  when a stream is on a non-`ts6rig_` device; `--strict` lists every stream, flagging those on real devices, `(stream muted)` shows
-  the stream-level mute). By hand: `pactl list short source-outputs` / `sink-inputs` (match the client's pid in
+  when a stream is on a non-`ts6rig_` device; `--strict` also fails on any stream that is not muted at the stream level, even on a rig device;
+  `(stream muted)` shows the stream-level mute; `--allow-prefix P` changes the allowed device prefix; `--help` prints usage). By hand: `pactl list short source-outputs` / `sink-inputs` (match the client's pid in
   `pactl list source-outputs`); no test client may sit on a real device unmuted.
 
 ## Hidden test windows
