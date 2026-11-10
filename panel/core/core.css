@@ -1,5 +1,7 @@
 /* ts6-mods core styles. Only classes prefixed mods-; colours come from the --mods-* tokens, which anchors.js maps
  * to the active TS theme's own custom properties (so default and custom themes both look right). */
+/* the hidden attribute must win over the display rules below (.mods-field grid, .mods-row flex, ...) */
+.mods-card [hidden], [class*="mods-"][hidden] { display: none !important; }
 .mods-card { color: var(--mods-fg); }
 .mods-title { margin: 4px 0 8px; font-size: 15px; font-weight: 600; }
 .mods-subtitle { margin: 14px 0 6px; font-size: 13px; font-weight: 600; opacity: .9; }

@@ -59,6 +59,27 @@ export default async function (ctx) {
     await ctx.waitFor(`(__thApi.theme.activeSource()||'').includes('de.wurst.graphite')`, 'graphite applied through the client setting');
     ctx.equal(await ctx.eval(`__thApi.theme.current()`), GRAPHITE, 'current() is graphite');
 
+    /* ---- switching from the picker (tree unmounted on the Mods page): returning to the tree re-measures it; hidden fields hidden ---- */
+    {
+      const want = `(()=>{ const p = document.createElement('div'); p.style.cssText = 'position:absolute;visibility:hidden;height:0'; document.body.append(p);
+        const v = ['client-height-compact','client-height-default','channel-height-default','spacer-height-default'].map(n => { p.style.width = 'var(${V}' + n + ')'; return p.getBoundingClientRect().width; }); p.remove(); return v; })()`;
+      const same = `JSON.stringify(__thApi.theme.treeHeights()) === JSON.stringify(${want})`;
+      const overlap = `__thApi.theme.rowsOverlap()`;
+      const sw = async (id) => {
+        await ctx.openModsPage();
+        await ctx.waitFor(`!!document.querySelector('select.theme-mod-select')`, 'picker on the Mods page', 5000);
+        ctx.assert(await ctx.eval(`(()=>{ const f = [...document.querySelectorAll('.mods-field')].find(e => /Poll interval/.test(e.textContent)); return !!f && getComputedStyle(f).display === 'none'; })()`), 'poll slider is not displayed while live reload is off');
+        await ctx.eval(`(()=>{ const s = document.querySelector('select.theme-mod-select'); s.value = ${JSON.stringify(id || '')}; s.dispatchEvent(new Event('change')); })()`);
+        await ctx.sleep(2000);   // longer than the post-switch timers: they must be no-ops here, the tree is not shown
+        await ctx.restoreRoute();
+        await ctx.waitFor(`__thApi.theme.state().treeShown && __thApi.theme.state().clientRow != null`, 'tree shown again', 8000);
+        await ctx.waitFor(same, 'tree cached heights equal the computed vars after returning (' + (id || 'default') + ')', 5000);
+        ctx.assert(!(await ctx.eval(overlap)), 'client rows do not overlap');
+      };
+      await sw(null);
+      await sw(GRAPHITE);
+    }
+
     /* ---- one-shot reload (the button): swaps the CSS in and re-measures the tree ---- */
     edit(40, 'one');
     const graphiteRow = await ctx.eval(rowH);

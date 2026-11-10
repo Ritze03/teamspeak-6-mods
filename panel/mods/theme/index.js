@@ -38,6 +38,9 @@
       S.ms = Math.max(MIN_MS, Math.min(MAX_MS, +api.storage.get('ms', DEFAULT_MS) || DEFAULT_MS));
       S.last = ''; S.error = ''; S.reloads = 0;
       applyPolling();
+      /* the tree caches the row heights when it mounts; a theme switched while no tree is shown (this page, stock Appearance) leaves
+       * it stale when the view returns, so on every route change re-measure once the tree is there, if its heights differ */
+      api.onRoute(() => { for (const ms of [150, 600, 1500]) api.timeout(() => { api.theme.remeasure({ ifStale: true }).catch(() => {}); }, ms); });
     },
     disable() { modApi = null; stopPoll = null; view = null; },
 

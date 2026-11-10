@@ -68,7 +68,7 @@
     const activeSource = () => { const l = linkEl(); return l ? l.href : null; };
 
     /* the re-measure: the tree reads --ts-tree-*-height once at mount and its cache refresh is dead, so the tree gets re-mounted */
-    async function remeasure() { return treeRemount(); }
+    async function remeasure(opts) { return treeRemount(opts); }
 
     function dropStyle() { if (st.style) { st.style.remove(); st.style = null; } const l = linkEl(); if (l) l.disabled = false; }
     function swap(link, css) {
@@ -100,14 +100,17 @@
       return { source: l ? l.href : null, linkDisabled: l ? l.disabled : null, liveStyles: document.querySelectorAll('style[data-theme-live]').length,
         treeShown: !!A.tryGet('theme.tree'), clientRow: r ? Math.round(r.getBoundingClientRect().height) : null }; };
 
-    return { state, list, current, apply, rescan, activeSource, check, reset, remeasure, flattenUrl: u => flatten(u, 0, new Set()) };
+    /* heights the tree has cached vs the ones the active theme computes (diagnostics) */
+    const rowsOverlap = () => { const r = [...document.querySelectorAll('.ts-server-tree-item-leaf.client')].map(e => e.getBoundingClientRect()).sort((a, b) => a.top - b.top); return r.some((x, i) => i && x.top < r[i - 1].bottom - 1); };
+    const treeHeights = () => { const vm = A.tryGet('theme.tree'); return vm ? TREE_FIELDS.map(f => vm[f]) : null; };
+    return { treeHeights, rowsOverlap, state, list, current, apply, rescan, activeSource, check, reset, remeasure, flattenUrl: u => flatten(u, 0, new Set()) };
   });
 
   /* Re-measure the tree: its own cache (appController.variableCache.recomputeCache) iterates a Map with for..in and so never refreshes
    * anything, and its measuring clone is stale. So read the variables the way the clone does (a hidden probe whose width is the
    * variable, inside the tree's container so it inherits the same scope), write the numbers into the component's fields, and let it
    * rebuild its row list; the virtual list drops its cached sizes. */
-  async function treeRemount() {
+  async function treeRemount(opts) {
     const vm = A.tryGet('theme.tree'), scroller = document.querySelector('.ts-server-tree-scroller');
     if (!vm || !scroller) return { remeasured: false, reason: 'no tree shown' };
     const p = document.createElement('div');
@@ -116,6 +119,7 @@
     let vals;
     try { vals = TREE_VARS.map(n => { p.style.width = 'var(' + n + ')'; return p.getBoundingClientRect().width; }); } finally { p.remove(); }
     if (vals.some(v => !(v > 0))) return { remeasured: false, reason: 'unreadable variable', vals };
+    if (opts && opts.ifStale && TREE_FIELDS.every((f, i) => Math.abs(vm[f] - vals[i]) < 0.5)) return { remeasured: false, reason: 'current', vals };
     TREE_FIELDS.forEach((f, i) => { vm[f] = vals[i]; });
     if (typeof vm.flattenServer === 'function') vm.flattenServer();
     const vl = scroller.__vue__;
