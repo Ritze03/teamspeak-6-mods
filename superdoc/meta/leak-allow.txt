@@ -1,0 +1,1 @@
+/opt/teamspeak/TeamSpeak  # standard install path of the TS6 Linux package, not machine-specific
