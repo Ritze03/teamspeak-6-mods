@@ -22,7 +22,7 @@ No TeamSpeak files are modified; everything is added at runtime and disappears w
 
 Quick: `ritz-get install teamspeak-6-mods`
 
-Manual: needs Linux, the TeamSpeak 6 client (tested with 6.0.0-beta5.1 in `/opt/teamspeak`; otherwise set `TS6MOD_TS_BIN`),
+Manual: needs Linux, the TeamSpeak 6 client (tested with 6.0.0-beta5.1 in `/opt/teamspeak`; `~/.local/opt/teamspeak` and the Flatpak are detected automatically, see [Flatpak](superdoc/features/flatpak.md); otherwise set `TS6MOD_TS_BIN`),
 Node.js 22+, `gcc` and `make`, and PulseAudio or PipeWire's pulse layer for the audio mod. Then run:
 
 ```

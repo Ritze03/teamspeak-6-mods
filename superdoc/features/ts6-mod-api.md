@@ -306,7 +306,9 @@ marked DOM (`[data-ts6mod="<id>"]`), never TS names. Page-side core handles for 
 
 | Env | Meaning |
 |---|---|
-| `TS6MOD_TS_BIN` | client binary (default the standard install path) |
+| `TS6MOD_TS_BIN` | client binary; unset = discovery: `/opt/teamspeak`, `~/.local/opt/teamspeak`, then the Flatpak (see [flatpak.md](flatpak.md)) |
+| `TS6MOD_FLATPAK=1` / `TS6MOD_FLATPAK_ID` | force Flatpak mode / app id (default `com.teamspeak.TeamSpeak`) |
+| `TS6MOD_DRYRUN=1` | print the start command and exit (after discovery and the already-running checks) |
 | `TS6MOD_CDP_PORT` | DevTools (CDP) port, default 9222 |
 | `TS6MOD_PORT` | native control API port, default 38998 |
 | `TS6MOD_PROFILE_DIR=<dir>` | isolated profile: `HOME` and `XDG_CONFIG_HOME/CACHE_HOME/STATE_HOME/DATA_HOME` point at subdirectories of `<dir>`, so several clients run side by side with their own settings database and native config/log; only a client on the same CDP port blocks the start |

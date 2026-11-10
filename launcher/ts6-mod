@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Start the TeamSpeak 6 client with the ts6-mods native module and the mod framework (panel/core + panel/mods).
 # Same as the desktop entry (/opt/teamspeak/TeamSpeak %u) plus LD_PRELOAD and a loopback-only debug port.
-# Env: TS6MOD_TS_BIN       client binary (default /opt/teamspeak/TeamSpeak)
+# Client discovery (see superdoc/features/flatpak.md): TS6MOD_TS_BIN, else /opt/teamspeak/TeamSpeak, else
+# ~/.local/opt/teamspeak/TeamSpeak, else the Flatpak app (com.teamspeak.TeamSpeak).
+# Env: TS6MOD_TS_BIN       client binary (wins over discovery)
+#      TS6MOD_FLATPAK      1 = use the Flatpak even when a tarball client exists
+#      TS6MOD_FLATPAK_ID   Flatpak app id (default com.teamspeak.TeamSpeak); setting it also selects Flatpak mode
+#      TS6MOD_DRYRUN       1 = print the command that would start the client and exit
 #      TS6MOD_CDP_PORT     DevTools (CDP) port, default 9222
 #      TS6MOD_PORT         native control API port, default 38998
 #      TS6MOD_PROFILE_DIR  isolated profile: HOME and all XDG_*_HOME dirs point inside this dir, so several clients can run side
@@ -11,19 +16,37 @@
 # Everything else is passed to the client, e.g. a ts3server://host:port?nickname=X URL to auto-connect.
 set -u
 root="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
-ts="${TS6MOD_TS_BIN:-/opt/teamspeak/TeamSpeak}"
+fpid="${TS6MOD_FLATPAK_ID:-com.teamspeak.TeamSpeak}"
+fp_bin=/app/extra/TeamSpeak   # where the Flathub package keeps the client inside the sandbox
+fp_has() { command -v flatpak >/dev/null && flatpak list --app --columns=application 2>/dev/null | grep -qix "$fpid"; }
+fp_running() { command -v flatpak >/dev/null && flatpak ps --columns=application 2>/dev/null | grep -qix "$fpid"; }
+flat=
+if [ -n "${TS6MOD_TS_BIN:-}" ]; then ts="$TS6MOD_TS_BIN"
+elif [ "${TS6MOD_FLATPAK:-}" = 1 ] || [ -n "${TS6MOD_FLATPAK_ID:-}" ]; then flat=1
+else
+  ts=
+  for c in /opt/teamspeak/TeamSpeak "$HOME/.local/opt/teamspeak/TeamSpeak"; do [ -x "$c" ] && { ts="$c"; break; }; done
+  [ -n "$ts" ] || { fp_has && flat=1; }
+  [ -n "$ts" ] || [ -n "$flat" ] || ts=/opt/teamspeak/TeamSpeak
+fi
+if [ -n "$flat" ]; then
+  ts="$fp_bin"
+  if ! fp_has; then echo "ts6-mod: Flatpak app $fpid is not installed (TS6MOD_FLATPAK_ID overrides the id)" >&2; exit 1; fi
+  if [ -n "${TS6MOD_PROFILE_DIR:-}" ]; then echo "ts6-mod: TS6MOD_PROFILE_DIR is not supported with the Flatpak client" >&2; exit 1; fi
+fi
 cdp="${TS6MOD_CDP_PORT:-9222}"; ctl="${TS6MOD_PORT:-38998}"
 so="$root/build/libts6mod.so"   # built by install.sh; dev builds (make -C native) land in native/
 [ -f "$so" ] || so="$root/native/libts6mod.so"
 
-if [ ! -x "$ts" ]; then echo "ts6-mod: client not found at $ts (set TS6MOD_TS_BIN)" >&2; exit 1; fi
+if [ -z "$flat" ] && [ ! -x "$ts" ]; then echo "ts6-mod: TeamSpeak client not found (looked in /opt/teamspeak, ~/.local/opt/teamspeak and for the Flatpak $fpid; set TS6MOD_TS_BIN)" >&2; exit 1; fi
 if [ "$so" = "$root/native/libts6mod.so" ] && { [ ! -f "$so" ] || [ "$root/native/ts6mod.c" -nt "$so" ] || [ "$root/native/dsp/ts6dsp.c" -nt "$so" ]; }; then
   make -C "$root/native" >&2 || { echo "ts6-mod: building native module failed" >&2; exit 1; }
 fi
 if ! command -v node >/dev/null; then echo "ts6-mod: node (>= 22) is required" >&2; exit 1; fi
 
 # pid of the client carrying our debug-port flag (the client hands over to a re-spawned process right after start)
-main_pid() { pgrep -u "$(id -u)" -f "^$ts --remote-debugging-port=$cdp( |\$)" | head -n1; }
+# (the Flathub wrapper puts its own --ozone-platform flags before ours)
+main_pid() { pgrep -u "$(id -u)" -f "^$ts( [^ ]*)* --remote-debugging-port=$cdp( |\$)" | head -n1; }
 if [ -n "${TS6MOD_PROFILE_DIR:-}" ]; then
   if [ -n "$(main_pid)" ]; then echo "ts6-mod: a client already uses debug port $cdp" >&2; exit 1; fi
   p="$(mkdir -p "$TS6MOD_PROFILE_DIR" && cd "$TS6MOD_PROFILE_DIR" && pwd)"
@@ -32,14 +55,37 @@ if [ -n "${TS6MOD_PROFILE_DIR:-}" ]; then
 else
   # default profile: a running client of it would swallow our start (single instance) and the module could not be preloaded.
   # Main processes with a --remote-debugging-port of another number are assumed to be isolated-profile clients and are ignored.
-  mains="$(pgrep -u "$(id -u)" -af "^$ts( |\$)" | grep -v -e ' --type=' || true)"
+  # Any client binary named TeamSpeak counts (tarball anywhere, or /app/... of a Flatpak), not just $ts.
+  mains="$(pgrep -u "$(id -u)" -af '^[^ ]*/TeamSpeak( |$)' | grep -v -e ' --type=' || true)"
   if [ -n "$(printf '%s\n' "$mains" | grep -v -e '--remote-debugging-port=' | sed '/^$/d')" ] || [ -n "$(main_pid)" ]; then
     echo "ts6-mod: TeamSpeak is already running; close it first (the module can only be preloaded at start)" >&2; exit 1
+  fi
+  if fp_running; then
+    echo "ts6-mod: TeamSpeak is already running (Flatpak $fpid); close it first (the module can only be preloaded at start)" >&2; exit 1
+  fi
+  # last resort: TS6 holds local port 5899; with no visible client process something else (e.g. a sandboxed one) owns it
+  if [ -z "$(printf '%s\n' "$mains" | sed '/^$/d')" ] && command -v ss >/dev/null && ss -ltn 'sport = :5899' 2>/dev/null | grep -q LISTEN; then
+    echo "ts6-mod: TCP port 5899 (TeamSpeak's local port) is in use, so TeamSpeak is probably already running; close it first" >&2; exit 1
   fi
 fi
 
 export TS6MOD_PORT="$ctl"
-LD_PRELOAD="$so${LD_PRELOAD:+:$LD_PRELOAD}" ${TS6MOD_WRAP:-} "$ts" --remote-debugging-port="$cdp" "$@" &
+if [ -n "$flat" ]; then
+  # the sandbox sees only what we grant: the preload module's directory (read-only) and the env the module reads;
+  # config/log of the native module land in the app's XDG dirs (~/.var/app/<id>/...)
+  cmd=(flatpak run --env=LD_PRELOAD="$so" --env=TS6MOD_PORT="$ctl" --env=TS6MOD_EXE="$ts"
+       --filesystem="$(dirname "$so"):ro" "$fpid" --remote-debugging-port="$cdp" "$@")
+else
+  export TS6MOD_EXE="${TS6MOD_EXE:-$(readlink -f "$ts")}"   # the module only acts in the main process, matched by exe path
+  cmd=("$ts" --remote-debugging-port="$cdp" "$@")
+fi
+if [ "${TS6MOD_DRYRUN:-}" = 1 ]; then
+  [ -n "$flat" ] || printf 'LD_PRELOAD=%s TS6MOD_EXE=%s TS6MOD_PORT=%s ' "$so" "$TS6MOD_EXE" "$ctl"
+  printf '%q ' ${TS6MOD_WRAP:-} "${cmd[@]}"; echo; exit 0
+fi
+if [ -n "$flat" ]; then ${TS6MOD_WRAP:-} "${cmd[@]}" &
+else LD_PRELOAD="$so${LD_PRELOAD:+:$LD_PRELOAD}" ${TS6MOD_WRAP:-} "${cmd[@]}" &
+fi
 ts_pid=$!
 inj_args=(--cdp-port "$cdp" --port "$ctl"); [ "${TS6MOD_EXAMPLES:-}" = 1 ] && inj_args+=(--examples)
 node "$root/tools/cdp/mods-inject.mjs" "${inj_args[@]}" &

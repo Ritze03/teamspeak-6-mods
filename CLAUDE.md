@@ -11,7 +11,7 @@ Feature docs (plain links, read on demand): `superdoc/features/ts6-mod-api.md` (
 extension files, tests, launcher, how to build a mod), `superdoc/features/mods-panel.md` (Mods page, Dashboard button),
 `superdoc/features/agc.md` (audio mod, control API, presets, per-user audio), `superdoc/features/ts6-native-agc.md` (stock playback AGC + experimental mode, measured), `superdoc/features/per-speaker-hook.md`
 (native per-sender detour), `superdoc/features/test-rig.md` (local audio rig), mods: `superdoc/features/mod-net.md`,
-`mod-power.md`, `mod-aware.md`, `mod-layout.md`, `mod-theme.md`, `mod-chat.md`, `mod-files.md`, research:
+`mod-power.md`, `flatpak.md` (Flatpak / non-/opt client discovery, launcher), `mod-aware.md`, `mod-layout.md`, `mod-theme.md`, `mod-chat.md`, `mod-files.md`, research:
 `superdoc/features/ts6-modding-surface.md` (client internals reachable from outside),
 `superdoc/features/ts6-ui-extension-points.md` (UI hooks).
 

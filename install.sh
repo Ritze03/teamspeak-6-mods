@@ -32,7 +32,11 @@ build() {
 	# runtime deps are not ours to install: non-fatal notes only
 	if ! command -v node >/dev/null 2>&1; then echo "note: node (22 or newer) is needed to run it and was not found"
 	elif [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -lt 22 ]; then echo "note: node 22 or newer is needed to run it"; fi
-	[ -x "${TS6MOD_TS_BIN:-/opt/teamspeak/TeamSpeak}" ] || echo "note: TeamSpeak 6 client not found at ${TS6MOD_TS_BIN:-/opt/teamspeak/TeamSpeak} (set TS6MOD_TS_BIN)"
+	# same discovery as launcher/ts6-mod (superdoc/features/flatpak.md); a miss is only a note, the client can be installed later
+	if [ -n "${TS6MOD_TS_BIN:-}" ]; then [ -x "$TS6MOD_TS_BIN" ] || echo "note: TeamSpeak 6 client not found at $TS6MOD_TS_BIN"
+	elif [ -x /opt/teamspeak/TeamSpeak ] || [ -x "$HOME/.local/opt/teamspeak/TeamSpeak" ]; then :
+	elif command -v flatpak >/dev/null 2>&1 && flatpak list --app --columns=application 2>/dev/null | grep -qix "${TS6MOD_FLATPAK_ID:-com.teamspeak.TeamSpeak}"; then :
+	else echo "note: TeamSpeak 6 client not found (looked in /opt/teamspeak, ~/.local/opt/teamspeak and the Flatpak; set TS6MOD_TS_BIN)"; fi
 	rm -f build/.libts6mod.so.new
 	make -s -C native OUT=../build/.libts6mod.so.new
 	mv -f build/.libts6mod.so.new build/libts6mod.so

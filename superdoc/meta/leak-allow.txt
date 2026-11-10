@@ -1,1 +1,2 @@
 /opt/teamspeak/TeamSpeak  # standard install path of the TS6 Linux package, not machine-specific
+/app/extra/TeamSpeak  # install path inside the Flathub package sandbox, public
