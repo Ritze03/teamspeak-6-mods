@@ -98,7 +98,7 @@ All sub-features start off after enabling the mod.
 
 1. "Chat tabs": open two chats. Expect: a tab strip in the title bar with one tab per chat (click switches, x closes, count badge for unread), and the
    left column collapsed to its icon column; switching off restores the previous column.
-2. "Server tabs" (own switch): connect two servers. Expect: one tab per server in front of the chat tabs, no x.
+2. Pinned tab: the first tab is always your current channel's chat (no x, not draggable) and follows you when you switch channels; the strip starts where the chat pane starts. Drag the other tabs to reorder; the order survives a restart.
 3. Density slider: move 60 to 140 %. Expect: tree rows get smaller/larger live; 100 is exactly vanilla.
 4. Hide switches: try each (announcement bar, banner card, File Transfer Info card, AFK, Create a TeamSpeak Community, Bookmarks,
    Dashboard banner / Popular Servers / Chats). Expect: exactly that element disappears, and comes back when switched off.

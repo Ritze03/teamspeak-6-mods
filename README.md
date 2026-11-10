@@ -46,7 +46,7 @@ switch it on and open the card for its settings. To go back to normal, switch th
 | Connection quality | Ping / packet-loss readout in the top bar |
 | Power tools | Copy-ID menu entries, command palette (Ctrl+K), hidden developer toggles |
 | Server awareness | Talking badges on channels, idle times, join / leave feed |
-| Layout | Chat and server tabs in the title bar, row density, hide clutter |
+| Layout | Chat tabs in the title bar (current channel first, reorderable), row density, hide clutter |
 | Theme tools | Theme picker, one-click reload, live reload of the active theme |
 | Split long messages | Splits long chat messages and raises the input limit |
 | Compress images | Shrinks large images before upload |
