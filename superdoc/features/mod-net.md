@@ -27,7 +27,7 @@ Built on [ts6-mod-api.md](ts6-mod-api.md); files: `panel/mods/net/` (`index.js`,
 - **Polling**: one `api.interval` that requests statistics only while a connection is established; no request is made while
   disconnected, history is cleared on disconnect. Requests do not overlap (`busy` guard).
 
-## Settings (Mods page, persisted via `api.storage`)
+## Settings (Settings -> Mods -> Net card -> its page, boxes Display and Alert limits; persisted via `api.storage`)
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -69,7 +69,7 @@ node tools/test/run-all.mjs --cdp-port <cdp> --control-port <ctl> --only net
 appear and the update counter (`data-updates`) increases; bandwidth shown by default; popover opens, sparkline and codec are
 drawn and the popover is on screen; Copy diagnostics reports an outcome (and, if the clipboard can be read, the block contains
 the expected lines); Escape closes the popover; with alerts on and an impossible limit exactly one toast fires and none repeats
-within the cooldown; the bandwidth switch on the Mods page hides/shows the bandwidth part live (clicked twice to restore the
+within the cooldown; the bandwidth switch on the mod's page hides/shows the bandwidth part live (clicked twice to restore the
 saved value); disable removes HUD and popover, `assertClean`, and the request counter stops. Without a connection the live
 part is skipped (and the test asserts no requests). Manual check: also look at the HUD in the real top bar in the default and a
 custom theme.

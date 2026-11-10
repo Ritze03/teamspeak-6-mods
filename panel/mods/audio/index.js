@@ -254,7 +254,7 @@
     const err = h('p', { class: 'mods-error' });
 
     /* layout: four tabs of boxes (the page lays each ui.section out as a box) */
-    const procBox = ui.section('Audio processing', master.el, status);
+    const procBox = ui.section('Master switch', master.el, status);
     const modeBox = ui.section('Mode', h('div', { class: 'mods-row' }, ...modePills.map(x => x.b.el)), modeHelp);
     const presetBox = ui.section('Presets', presetRow, h('div', { class: 'mods-row' }, modified), presetNote, nameRow, presetActs);
     const groupBoxes = groups;

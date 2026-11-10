@@ -131,6 +131,11 @@ e.g. `talkerC 9233 RigTalkerC ts6rig_talk3.monitor ts6rig_deaf`); `EXPECT` follo
 - Never launch `ts3server://` URLs by hand next to a real client: a URL launch with no running instance of that profile exits
   at once and may be handed to a differently-profiled running TeamSpeak.
 - Do not `Page.reload` a rig client (see ts6-modding-surface.md); restart it with `rig down` / `rig up`.
+- **Launch flags for a hidden/backgrounded client**: a client that is hidden, occluded or backgrounded never runs
+  `requestAnimationFrame`, so panel tests that wait on it fail (audio "popover closes", layout "sidebar collapsed to its 62 px",
+  slot modal "close()", contextMenu "an item without an icon"). Launch an isolated test client with `--ozone-platform=x11
+  --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling`. `tools/rig/rig`
+  (`client_up`) passes only `--remote-debugging-port`, so rig clients do not have them yet.
 - The rig does not inject the Mods panel; it launches the binary directly with the preload (the panel/launcher are not needed
   to test the audio hook).
 - The client process ends with a segmentation fault when `rig down` sends SIGTERM (seen on all three instances, also without the

@@ -21,7 +21,7 @@ All TeamSpeak names live in `panel/core/x-layout.js` (core extension file, `api.
    Community" button, Bookmarks section, Dashboard "Start your own Community" banner, Dashboard Popular Servers, Dashboard Chats
    (both Dashboard hide switches together hide the whole servers card).
 
-## Settings (`api.storage`, mod id `layout`)
+## Settings (`api.storage`, mod id `layout`; Settings -> Mods -> Layout card -> its page, boxes Tabs, Density, Hide: <group>)
 
 `chatTabs` (bool), `serverTabs` (bool), `density` (number, percent), `hide` (`{key: true}`, keys: `announce hostBanner transfer
 createChannel afk join bookmarks dashStart dashPopular dashChats`). Defaults: false, false, 100, `{}`.
@@ -47,7 +47,7 @@ Automatic: `node tools/test/run-all.mjs --cdp-port <cdp> --control-port <ctl> --
 against a client connected to a server with at least one other user (the test sends "layout test" as a private message to up to
 two users; without another user the chat part logs a skip). It checks: no strip while off; chat tabs on -> sidebar 62 px, one
 tab per open chat, click switches the active tab, x closes the chat in the client; off -> sidebar width restored, clean ledger;
-server tabs and their click; density 70 % shrinks rows live and off restores them; the Mods page slider (130 %) enlarges rows;
+server tabs and their click; density 70 % shrinks rows live and off restores them; the Layout page slider (130 %) enlarges rows;
 every hide key hides all matching elements and off restores them (elements not on screen are skipped with a log line).
 Hide targets exist on the server view (tree/info page) and on the Dashboard; the test visits both.
 The test edits the stored `layout` settings only in memory and restores them; driving the slider writes the settings blob

@@ -8,7 +8,7 @@ join / leave / move feed. Code: `panel/mods/aware/` (`index.js`, `style.css`, `t
 ## Features and settings
 
 Each sub-feature has its own switch and its own `api.scope()`; switching one off disposes exactly its DOM, listeners, timers
-and requests. Settings are stored per mod (`api.storage`) and edited on the Mods page.
+and requests. Settings are stored per mod (`api.storage`) and edited on the Aware card's page (Settings -> Mods -> Aware; boxes Channel activity, Idle times, Join / leave feed).
 
 | Setting | Default | Meaning |
 |---|---|---|

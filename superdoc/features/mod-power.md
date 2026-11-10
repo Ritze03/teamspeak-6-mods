@@ -9,7 +9,7 @@ Files: `panel/mods/power/index.js` (the mod, no client internals), `panel/mods/p
 
 ## Features and settings
 
-All settings are on the Mods page under the Power switch (stored with `api.storage`: `hotkey`, `copy`).
+All settings are on the Power card's page (Settings -> Mods -> Power; boxes Command palette, Copy entries in the right-click menus, Hidden developer toggles) (stored with `api.storage`: `hotkey`, `copy`).
 
 1. **Copy entries.** Right-click a user: *Copy unique ID*, *Copy client ID*, *Copy database ID* (only shown when the id is
    known), *Copy nickname*. Right-click a channel: *Copy channel ID*, *Copy channel path* (`Parent / Child`, without the
@@ -25,7 +25,7 @@ All settings are on the Mods page under the Power switch (stored with `api.stora
    - Go to: Open Settings, Open Mods page, Go to Dashboard.
    - Audio / Server (only while a connected server tab is displayed): Mute/Unmute microphone, Mute/Unmute speakers (press
      the toolbar's own buttons), Disconnect from server.
-   - Mods: Enable/Disable every mod except Power itself (in-memory and persisted, same as the Mods page switch).
+   - Mods: Enable/Disable every mod except Power itself (in-memory and persisted, same as the card switch).
    - Server: Switch to `<server>` for every other open server tab.
    - Channel: Join `<channel path>` for every channel of the displayed server except the one you are in. A
      password-protected channel is listed with a "password" tag and the join reports that it is protected. Spacer channels
