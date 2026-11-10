@@ -53,6 +53,15 @@ Why: the column's blocks are Vue-rendered from internal "resources", which a mod
 block is the least invasive route; the click handler is the native action, nothing is faked. The click handler sits on the
 block's root (not on the inner tab) so that a plain `element.click()` in tests and a real click behave the same.
 
+### Test procedure (Dashboard button)
+
+By hand: switch "Dashboard button" on -> an icon appears in the left column. Click it -> the Dashboard opens and the icon is highlighted.
+Navigate elsewhere -> the highlight goes away. Switch the mod off -> the icon is gone.
+
+Automated: `panel/mods/dashboard/test.mjs` starts from off (no button), enables (exactly one button, titled "Dashboard"), clicks it
+(route becomes `/dashboard`, button gets the `active` class), restores the route (highlight removed), disables (button gone) and runs
+`ctx.assertClean('dashboard')` (no ledger entries, no DOM left).
+
 ## Terms
 
 See `meta/TERMINOLOGY.md` ("Dashboard").

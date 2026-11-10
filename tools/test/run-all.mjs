@@ -183,7 +183,10 @@ if (!only.length) {
 
 /* ---------- 5 vanilla check: everything off ---------- */
 try {
-  const ids = Object.keys(initial);
+  /* settle first: the last core test hot-reloads the core, and the new core's one-shot vanilla guard (panel/core/x-audio.js:vanillaGuard,
+   * one GET /config per page load) can land up to ~0.5 s later, inside the polling window below. Wait until no request has been made for 1.2 s. */
+  for (let quiet = 0, last = -1, i = 0; quiet < 1200 && i < 60; i++) { const n = await ev('__ts6mod.trace().nativeRequests'); quiet = n === last ? quiet + 200 : 0; last = n; await sleep(200); }
+  const known = new Set(await ev(`__ts6mod.list().map(m => m.id)`)), ids = Object.keys(initial).filter(id => known.has(id));   // example tests unregister their mods
   for (const id of ids) await ev(`__ts6mod.setEnabled(${JSON.stringify(id)}, false, {persist: false})`);
   const t = await ev('__ts6mod.trace()');
   const left = Object.entries(t.ledgers).filter(([, l]) => l && Object.keys(l).length);
@@ -199,7 +202,7 @@ try {
   const modes = await ev('__ts6mod.anchors.settings.keys()');
   if (modes.filter(k => k.startsWith('TS6Mods')).join() !== 'TS6Mods') problems.push('Settings has mod entries other than "Mods": ' + modes.filter(k => k.startsWith('TS6Mods')).join(','));
   if (problems.length) line('FAIL', 'vanilla: all mods off', problems.join('; ')); else line('PASS', `vanilla: all ${ids.length} mods off leaves only the Mods settings entry`);
-  for (const [id, was] of Object.entries(initial)) if (was) await ev(`__ts6mod.setEnabled(${JSON.stringify(id)}, true, {persist: false})`).catch(() => {});
+  for (const [id, was] of Object.entries(initial)) if (was && known.has(id)) await ev(`__ts6mod.setEnabled(${JSON.stringify(id)}, true, {persist: false})`).catch(() => {});
 } catch (e) { line('FAIL', 'vanilla check', String(e.message || e)); }
 
 if (blob0 !== undefined) {   // after any debounced save (250 ms) has fired; the in-memory store is put back too, in place

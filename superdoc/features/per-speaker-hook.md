@@ -116,6 +116,9 @@ second per thread, every `uint32` field in `[sender, sender+0x800]` whose value 
 (`tools/rig/rig talk A bursty`) and read `…/state/ts6-mods/ts6mod.log`. Re-confirm `CID_OFFSET` this
 way after any client update; if it moved, update the constant.
 
+Rig invocation (the rig inherits the environment): `TS6HOOK_PROBE=1 RIG_STOCK_AGC=off tools/rig/rig up`, then enable per-speaker mode
+and play one talker at a time as above.
+
 ## Per-speaker engine
 
 - **Pool.** When per-speaker is first enabled, a pool of `MAX_SPEAKERS` (32) `ts6dsp` instances is
@@ -126,7 +129,9 @@ way after any client update; if it moved, update the constant.
   `ts6dsp_reset` (allocation-free) and configured from base params + this speaker's override.
 - **Processing.** If the slot is active, `ts6dsp_process_s16` runs in place; then the override's extra
   gain (if any) is applied and re-clamped to the DSP ceiling, so the ceiling guarantee holds even with
-  a boost. Then the original is called. Per-speaker meters (in dB, gain reduction, leveler gain, out
+  a boost. Then the original is called. **The ceiling is per speaker, before the mix**: simultaneous speakers can sum above it
+  (measured: ceiling -6 dB, two talkers at once -> mixed peak -4.9 dBFS; whole-stream mode on the same run: -6.0). Whole-stream mode
+  guarantees the ceiling on the mix, so combine it with per-speaker levelling when a hard mix ceiling matters. Per-speaker meters (in dB, gain reduction, leveler gain, out
   peak) are stored atomically for `/speakers`.
 - **Threading.** `playback_sender_data` runs on the client's audio/mix thread. Slot claim uses atomic
   CAS so it is safe even if more than one audio thread ever calls in; meters/override fields the

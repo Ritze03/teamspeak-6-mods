@@ -25,6 +25,11 @@ Needs Node >= 22 and a C compiler (builds `native/libts6mod.so` on first start).
 | `whole` (default) | `pa_stream_write` of the playback stream: one chain on everything mixed (voices + sounds) | works on any client; one loud speaker lowers the others |
 | `per_speaker` | inline hook on each sender's decoded PCM before the mix ([per-speaker-hook.md](per-speaker-hook.md)) | one chain per speaker, per-user overrides work, all speakers share one `lookahead_ms` delay; the whole-stream path then passes through |
 
+**Ceiling in per-speaker mode:** the ceiling is applied to each speaker *before* the mix, so simultaneous speakers can sum above it
+(measured: ceiling -6 dB, two talkers at once -> mixed peak -4.9 dBFS; the same run in whole-stream mode peaked at -6.0). Whole-stream mode
+is the one that guarantees the ceiling on the final mix; if you need both (per-user control and a hard mix ceiling), combine them
+(per-speaker levelling plus a whole-stream limiter) rather than relying on the per-speaker ceiling alone.
+
 Per-user overrides (boost, bypass, custom AGC) only act in `per_speaker` mode with the master switch on. The hook is installed
 the first time per-speaker mode is switched on with the master on and stays installed (inactive = pure passthrough).
 
@@ -167,11 +172,18 @@ the original, mute lifted, overrides cleared). Why UID and not the native side: 
 - Presets/user records/master live in the mods blob (profile database), the DSP values in `agc.json`; wiping one without the other shows
   "custom" values or an empty preset list.
 
+Why (disable/enable): `disable()` in `panel/mods/audio/index.js` sends ONE `/config` post (pending changes merged with `enabled:false`) at
+once and keeps its promise (`offPost`); `enable()` awaits it before reading `/config`. Two chained posts left a request in flight after
+the switch-off (a vanilla-check flake: "native polling continues"), and a quick off->on read `/config` before the post landed and lost
+the master switch. The debounced save and `refreshStatus` also stop touching state once the mod is disabled.
+Preset selection: an unknown native `preset` name (the native default is the legacy "balanced") selects the built-in preset whose values
+equal the current ones (`selected()`), so a fresh install shows Voice instead of "custom".
+
 ## Test procedure
 
 - Automated: `node tools/test/run-all.mjs --cdp-port <cdp> --control-port <ctl> --only audio` (`panel/mods/audio/test.mjs`): vanilla rule,
   master and mode switches through the real controls, all 11 parameter fields, the three built-in presets (values, "modified"), custom
-  preset save/update/rename/delete, per-user popover (volume, mute, boost, bypass, custom param, no lookahead field, re-push after mod
+  preset save/update/rename/delete, value-matched selection for an unknown native preset name, back-to-back off/on (native master equals the stored one), per-user popover (volume, mute, boost, bypass, custom param, no lookahead field, re-push after mod
   off/on, reset), cleanup. Safe on a real client: the master stays off while editing (the per-speaker hook is never installed by it),
   nothing touches a server, and every value, record and local mute is restored. The per-user part needs another connected user
   and runs only on the local test server (`ctx.onTestServer()`): the local mute goes through `requestSetClientsMute`, which

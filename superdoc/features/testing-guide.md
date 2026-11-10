@@ -23,6 +23,7 @@ Settings -> Mods -> Audio. Needs the PulseAudio/PipeWire-pulse backend.
 2. **Per speaker.** Switch mode to "per speaker" (the page explains it). With two people talking at different volumes.
    Expect: a list of speakers with nicknames and their own level and gain reduction; the quiet person is levelled up on their own while
    the loud person is not turned down because of them (in whole mode they share one gain).
+   Note: in per-speaker mode the ceiling holds per speaker before the mix; two people talking at once can peak above it (whole mode holds it on the mix).
 3. **Presets.** Switch between Voice, Music, Quiet night.
    Expect: the parameter sliders change to the preset values (Quiet night: lower overall volume, ceiling -6 dB); editing a value shows
    "modified"; Save as... creates your own preset, Update/Rename/Delete work, Revert returns to the preset.
@@ -124,3 +125,8 @@ Switch themes (Settings -> Appearance, or the theme mod's picker) and look at th
 and feed, layout tabs, power palette, audio popover, toasts. Expect: text readable, colours follow the theme (mods use the theme's own colours),
 nothing clipped or overlapping in either the default theme or your extension themes; also at a narrow window width (the net HUD is the widest piece:
 turn off its bandwidth part).
+
+Note on the runner's vanilla step (`tools/test/run-all.mjs`): it first waits until no native request has been made for 1.2 s. The last core
+test hot-reloads the core, and the new core's one-shot audio vanilla guard (`panel/core/x-audio.js:vanillaGuard`, one `GET /config` per page
+load) could otherwise land inside the 600 ms "no polling" window and fail it intermittently. With `--examples` the vanilla step only
+switches off mods that are still registered (example tests unregister theirs).

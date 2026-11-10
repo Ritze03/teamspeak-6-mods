@@ -122,6 +122,25 @@ export default async function (ctx) {
       await ctx.sleep(400);
       ctx.assert(!(await presetOf('Aud test renamed')), 'deleted preset removed from storage');
       ctx.equal((await nat('/config')).preset, 'custom', 'deleting the selected preset leaves the values as "custom"');
+
+      // an unknown native preset name (the native default's legacy "balanced") with the Voice values selects Voice by value
+      const voice = { target_db: -20, max_gain_db: 12, gate_db: -50, threshold_db: -24, ratio: 3, knee_db: 6, attack_ms: 5, release_ms: 150, makeup_db: 4, lookahead_ms: 5, ceiling_db: -1 };
+      await nat('/config', { preset: 'balanced', ...voice });
+      await ctx.waitFor(`!!document.querySelector('${BODY} [data-preset="voice"].on')`, 'legacy preset name with Voice values highlights Voice', 5000);
+      ctx.assert(!/do not match a preset/.test(await ctx.eval(`document.querySelector('${BODY}').textContent`)), 'no "custom" note for a value-matched preset');
+      await nat('/config', { preset: 'balanced', ratio: 5 });   // values no longer match anything: nothing highlighted
+      await ctx.waitFor(`!document.querySelector('${BODY} [data-preset].on')`, 'unknown name with unmatched values highlights nothing', 5000);
+
+      // quick off -> on: the enable must wait for the disable's post, or it reads a stale /config and loses the master switch
+      await ctx.eval(`(() => { __ts6mod.store().settings.audio.master = true; return 1; })()`);
+      for (let i = 0; i < 4; i++) {
+        await ctx.eval(`(async () => { await __ts6mod.setEnabled('audio', false, { persist: false }); await __ts6mod.setEnabled('audio', true, { persist: false }); return 1; })()`);
+        await ctx.sleep(300);
+        ctx.equal((await nat('/config')).enabled, true, `back-to-back off/on #${i + 1}: native enabled equals the stored master switch`);
+      }
+      await nat('/config', { enabled: false });
+      await ctx.openModsPage();
+      await ctx.waitFor(`document.querySelectorAll('${BODY}').length === 1`, 'audio area back after the toggles');
     }
 
     // ---- per-user popover (needs another connected user and the native module)

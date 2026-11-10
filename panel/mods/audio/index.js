@@ -29,23 +29,25 @@
   };
   const NAME_MAX = 32;
 
-  let modApi = null, S = null, pending = null, cancelPend = () => {}, view = null;   // view = the shown settings area (null while hidden)
+  let modApi = null, S = null, pending = null, cancelPend = () => {}, view = null, offPost = null;   // view = the shown settings area (null while hidden)
   const applied = new Map();   // "schid:clientId" -> state we pushed for that user in this session (see syncPeers)
 
   /* ---------------- native control API ---------------- */
   async function refreshStatus() {
-    try { const [st, cfg] = await Promise.all([modApi.native.get('/status'), pending ? Promise.resolve(null) : modApi.native.get('/config')]);
+    const a = modApi; if (!a) return;
+    try { const [st, cfg] = await Promise.all([a.native.get('/status'), pending ? Promise.resolve(null) : a.native.get('/config')]);
+      if (modApi !== a) return;   // disabled meanwhile: touch nothing
       S.status = st; if (cfg) S.cfg = cfg; S.native = 'ok'; }
-    catch (e) { S.native = 'absent'; S.status = null; S.meters = null; S.speakers = []; }
+    catch (e) { if (modApi !== a) return; S.native = 'absent'; S.status = null; S.meters = null; S.speakers = []; }
   }
   const sync = () => { if (view) view.sync(); };
   function patch(changes, now) {   /* optimistic local update, debounced POST of only the changed keys */
     Object.assign(S.cfg, changes); pending = Object.assign(pending || {}, changes);
     cancelPend();
     cancelPend = modApi.timeout(async () => {
-      const body = pending; pending = null;
-      try { S.cfg = await modApi.native.post('/config', body); S.error = ''; await refreshStatus(); }
-      catch (e) { S.error = 'Could not reach the native module (' + e.message + ')'; S.native = 'absent'; }
+      const body = pending, a = modApi; pending = null; if (!a) return;
+      try { const cfg = await a.native.post('/config', body); if (modApi !== a) return; S.cfg = cfg; S.error = ''; await refreshStatus(); }
+      catch (e) { if (modApi !== a) return; S.error = 'Could not reach the native module (' + e.message + ')'; S.native = 'absent'; }
       sync();
     }, now ? 0 : 150);
     sync();
@@ -176,7 +178,11 @@
     const bRevert = act('Revert to preset', 'revert', () => { const sel = selected(); patch({ preset: sel, ...presetValues(sel) }, true); });
     const modified = h('span', { class: 'mods-pill ghost on aud-modified' }, 'modified');
     const presetActs = h('div', { class: 'mods-row' }, bSave, bUpdate, bRename, bDelete, bRevert);
-    const selected = () => { const k = S.cfg && S.cfg.preset; return k && presetValues(k) ? k : null; };
+    /* an unknown name (e.g. the native default's legacy "balanced") falls back to matching the values against the built-in presets */
+    const selected = () => {
+      const k = S.cfg && S.cfg.preset; if (k && presetValues(k)) return k;
+      return S.cfg ? Object.keys(PRESETS).find(id => same(S.cfg, PRESETS[id].values)) || null : null;
+    };
     function commitName() {
       const name = nameIn.value.trim(), err = checkName(name, nameMode === 'rename' ? selected() : null);
       if (err) { nameErr.textContent = err; return; }
@@ -381,6 +387,7 @@
     title: 'Audio (AGC and per-user audio)',
     description: 'Automatic gain control for the voices you hear (leveler, compressor, limiter; whole stream or per speaker; presets and every parameter), per-user volume/mute/boost/AGC in the right-click menu, and the two stock TeamSpeak playback AGC options. Switching this mod off also switches the native AGC off.',
     async enable(api) {
+      if (offPost) { await offPost; offPost = null; }   // a quick off->on must not read /config before the disable's post has landed
       modApi = api; S = { native: 'unknown', cfg: null, status: null, meters: null, speakers: [], stock: null, error: '' }; pending = null;
       try {   // vanilla rule: the native master switch follows the mod; the user's own choice is remembered here ("master")
         const cfg = await api.native.get('/config'); S.native = 'ok'; S.cfg = cfg;
@@ -397,7 +404,8 @@
       if (a) {
         if (a.storage.get('master') === undefined && S && S.cfg) a.storage.set('master', !!S.cfg.enabled);
         clearPeers();
-        (p ? a.native.post('/config', p) : Promise.resolve()).catch(() => {}).then(() => a.native.post('/config', { enabled: false })).catch(() => {});
+        /* ONE post, sent now: pending changes and the switch-off together (two chained posts left a request in flight after disable) */
+        offPost = a.native.post('/config', Object.assign({}, p, { enabled: false })).catch(() => {});
       }
       modApi = S = view = null;
     },
