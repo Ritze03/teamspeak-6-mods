@@ -1,33 +1,208 @@
-// Audio mod: enable -> its settings area on the Mods page; polling only while the page is shown; disable -> no trace.
-// Reads only (never changes the native config or the stock TeamSpeak AGC settings).
+// Audio mod: the AGC page (master, mode, every parameter, built-in/custom presets), the vanilla rule (mod off = native AGC
+// off), the per-user popover (volume/mute/boost/AGC override, saved per UID, pushed to the native module) and cleanup.
+// Safe on a real client: no server actions; the native master switch stays OFF while modes/overrides are edited (so the
+// per-speaker hook is never installed by this test); every native value, user record, preset and local mute is restored.
+// The per-user part is skipped when nobody else is connected; the native part when the control API is unreachable.
 export default async function (ctx) {
-  const BODY = '[data-ts6mod="audio"]';
+  const BODY = 'div[data-ts6mod="audio"]:not(.aud-pop)', POP = '.aud-pop';
+  const base = `http://127.0.0.1:${ctx.controlPort}`;
+  const nat = async (path, body) => (await fetch(base + path, body ? { method: 'POST', body: JSON.stringify(body) } : {})).json();
   let nativeUp = false;
-  try { nativeUp = (await fetch(`http://127.0.0.1:${ctx.controlPort}/status`)).ok; } catch (e) { ctx.log('native control API not reachable on port ' + ctx.controlPort + ' (UI part only)'); }
+  try { nativeUp = (await fetch(base + '/status')).ok; } catch (e) { ctx.log('native control API not reachable on port ' + ctx.controlPort + ' (UI part only)'); }
   const reqs = () => ctx.eval(`__ts6mod.trace().nativeRequests`);
+  const modOn = () => ctx.eval(`__ts6mod.list().find(m => m.id === 'audio').enabled`);
+  const near = (a, b) => Math.abs(a - b) < 0.06;
+  const click = sel => ctx.eval(`(() => { const n = document.querySelector(${JSON.stringify(sel)}); if (!n) throw new Error('missing ' + ${JSON.stringify(sel)}); n.click(); return 1; })()`);
+  const clickText = (scope, text) => ctx.eval(`(() => { const n = [...document.querySelectorAll(${JSON.stringify(scope + ' label, ' + scope + ' button')})].find(x => x.textContent.trim().startsWith(${JSON.stringify(text)})); if (!n) throw new Error('missing ' + ${JSON.stringify(text)}); n.click(); return 1; })()`);
+  const setNum = (scope, key, v) => ctx.eval(`(() => { const i = document.querySelector(${JSON.stringify(scope + ' [data-key="' + key + '"] input[type=number]')}); if (!i) throw new Error('no field ' + ${JSON.stringify(key)}); i.value = ${v}; i.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`);
+  const store = () => ctx.eval(`JSON.parse(JSON.stringify(__ts6mod.store().settings.audio || null))`);
 
-  await ctx.disable('audio');   // start from "off" whatever the user has switched on (the runner restores the switch afterwards)
-  await ctx.enable('audio');
-  ctx.equal(await ctx.eval(`document.querySelectorAll('${BODY}').length`), 0, 'no settings DOM until the Mods page is open');
-  await ctx.openModsPage();
-  await ctx.waitFor(`document.querySelectorAll('${BODY}').length === 1`, 'audio area on the Mods page');
-  ctx.assert(await ctx.eval(`/Automatic Gain Control/.test(document.querySelector('${BODY}').textContent)`), 'stock AGC toggle is listed');
-  if (nativeUp) {
-    await ctx.waitFor(`/Better AGC/.test(document.querySelector('${BODY}').textContent) && !!document.querySelector('${BODY} .mods-meters') && !document.querySelector('${BODY} .mods-meters').closest('[hidden]')`, 'native AGC controls shown');
-    const a = await reqs(); await ctx.sleep(700);
-    ctx.assert(await reqs() > a, 'meters/status are polled while the page is shown');
+  // ---- snapshot everything the test may change
+  const wasOn = await modOn(), snap = await store(), cfg0 = nativeUp ? await nat('/config') : null;
+  const wasEnabledStore = await ctx.eval(`!!__ts6mod.store().enabled.audio`);
+  const restore = async () => {
+    if (await modOn()) await ctx.disable('audio');
+    if (nativeUp) await nat('/config', cfg0);   // transient: the next enable adopts/restores the user's master switch from it
+    await ctx.eval(`(() => { const s = __ts6mod.store(); const snap = ${JSON.stringify(snap)}; if (snap) s.settings.audio = snap; else delete s.settings.audio; return 1; })()`);
+    // persist the restored settings (setEnabled writes the whole blob) without changing the saved switch, then put the in-memory switch back
+    await ctx.eval(`__ts6mod.setEnabled('audio', ${wasEnabledStore}, { persist: true }).then(() => 1)`);
+    await ctx.eval(`__ts6mod.setEnabled('audio', ${wasOn}, { persist: false }).then(() => 1)`);
+    if (nativeUp && !wasOn) await nat('/config', { enabled: false });
+  };
+
+  try {
+    await ctx.disable('audio');   // start from "off" whatever the user has switched on
+    if (nativeUp) {
+      const st = await nat('/status');
+      ctx.assert(st.enabled === false && st.mode === 'passthrough', 'vanilla rule: mod off -> native AGC off / passthrough');
+      if (st.per_speaker) ctx.assert(st.per_speaker.added_latency_ms === 0, 'mod off -> no added latency');
+    }
+    await ctx.enable('audio');
+    if (nativeUp) await nat('/config', { enabled: false });   // keep the master off while editing (no per-speaker hook install on a real client)
+    ctx.equal(await ctx.eval(`document.querySelectorAll('${BODY}').length`), 0, 'no settings DOM until the Mods page is open');
+    await ctx.openModsPage();
+    await ctx.waitFor(`document.querySelectorAll('${BODY}').length === 1`, 'audio area on the Mods page');
+    ctx.assert(await ctx.eval(`/Automatic Gain Control/.test(document.querySelector('${BODY}').textContent)`), 'stock AGC toggle is listed');
+
+    if (nativeUp) {
+      await ctx.waitFor(`!!document.querySelector('${BODY} [data-key="target_db"]') && !document.querySelector('${BODY} [data-key="target_db"]').closest('[hidden]')`, 'AGC controls shown');
+      const a = await reqs(); await ctx.sleep(700);
+      ctx.assert(await reqs() > a, 'meters/status are polled while the page is shown');
+
+      // master switch (whole mode: the hook is not involved), through the real toggle
+      await nat('/config', { mode: 'whole' });
+      await ctx.waitFor(`document.querySelector('${BODY}') && /Whole stream/.test(document.querySelector('${BODY}').textContent)`, 'page up');
+      await clickText(BODY, 'Audio processing (AGC)');
+      await ctx.sleep(500);
+      ctx.equal((await nat('/config')).enabled, true, 'master switch on -> native enabled');
+      ctx.equal((await store()).master, true, 'master choice remembered');
+      await clickText(BODY, 'Audio processing (AGC)'); await ctx.sleep(500);
+      ctx.equal((await nat('/config')).enabled, false, 'master switch off -> native disabled');
+
+      // mode
+      await clickText(BODY, 'Per speaker'); await ctx.sleep(500);
+      ctx.equal((await nat('/config')).mode, 'per_speaker', 'mode per speaker set');
+      await ctx.waitFor(`document.querySelector('${BODY} .aud-speakers').closest('[hidden]') === null`, 'speaker list shown in per-speaker mode');
+      await clickText(BODY, 'Whole stream'); await ctx.sleep(500);
+      ctx.equal((await nat('/config')).mode, 'whole', 'mode whole set');
+
+      // every parameter through its number field
+      const defs = await ctx.eval(`[...document.querySelectorAll('${BODY} .aud-param')].map(p => { const r = p.querySelector('input[type=range]'); return { key: p.dataset.key, min: +r.min, max: +r.max, step: +r.step }; })`);
+      ctx.equal(defs.length, 11, 'eleven parameter fields');
+      for (const d of defs) {
+        const cur = (await nat('/config'))[d.key];
+        const snapTo = f => { const v = d.min + Math.round((d.max - d.min) * f / d.step) * d.step; return Math.round(v * 100) / 100; };
+        let v = snapTo(0.3); if (near(v, cur)) v = snapTo(0.7);
+        await setNum(BODY, d.key, v);
+        await ctx.sleep(350);
+        const got = (await nat('/config'))[d.key];
+        ctx.assert(near(got, v), `parameter ${d.key}: set ${v}, native has ${got}`);
+      }
+
+      // built-in presets: values and "modified"
+      const modified = () => ctx.eval(`!document.querySelector('${BODY} .aud-modified').hidden`);
+      for (const key of ['voice', 'music', 'quiet']) {
+        await click(`${BODY} [data-preset="${key}"]`); await ctx.sleep(500);
+        const c = await nat('/config');
+        ctx.equal(c.preset, key, `preset ${key} selected natively`);
+        ctx.assert(!(await modified()), `preset ${key}: not modified right after applying`);
+        if (key === 'voice') ctx.assert(near(c.target_db, -20) && near(c.ratio, 3) && near(c.ceiling_db, -1), 'voice values applied');
+        if (key === 'music') ctx.assert(near(c.target_db, -18) && near(c.ratio, 2) && near(c.release_ms, 400), 'music values applied');
+        if (key === 'quiet') ctx.assert(near(c.target_db, -26) && near(c.ratio, 6) && near(c.ceiling_db, -6), 'quiet night values applied');
+      }
+      await setNum(BODY, 'ratio', 4); await ctx.sleep(400);
+      ctx.assert(await modified(), 'editing a value shows "modified"');
+
+      // custom presets: save as, update, rename, delete (names are free text; the native key is user_<id>)
+      const userKey = () => ctx.eval(`(() => { const p = document.querySelector('${BODY} [data-preset^="user_"]'); return p ? p.dataset.preset : null; })()`);
+      const presetOf = async name => Object.values(((await store()).presets) || {}).find(p => p.name === name);
+      await click(`${BODY} [data-act="save-as"]`);
+      await ctx.eval(`(() => { const i = document.querySelector('${BODY} [data-act="name"]'); i.value = 'Aud test (1)'; return 1; })()`);
+      await click(`${BODY} [data-act="name-ok"]`);
+      await ctx.waitFor(`!!document.querySelector('${BODY} [data-preset^="user_"]')`, 'custom preset pill appears');
+      await ctx.sleep(400);
+      const key = await userKey();
+      ctx.equal((await nat('/config')).preset, key, 'custom preset selected natively');
+      ctx.assert(!(await modified()), 'a just-saved preset is not modified');
+      ctx.assert(near((await presetOf('Aud test (1)')).values.ratio, 4), 'custom preset stored with the current values');
+      await setNum(BODY, 'ratio', 7); await ctx.sleep(400);
+      ctx.assert(await modified(), 'custom preset shows modified after an edit');
+      await click(`${BODY} [data-act="update"]`);
+      await ctx.waitFor(`document.querySelector('${BODY} .aud-modified').hidden`, 'update clears modified');
+      ctx.assert(near((await presetOf('Aud test (1)')).values.ratio, 7), 'update stored the new values');
+      await click(`${BODY} [data-act="rename"]`);
+      await ctx.eval(`(() => { const i = document.querySelector('${BODY} [data-act="name"]'); i.value = 'Aud test renamed'; return 1; })()`);
+      await click(`${BODY} [data-act="name-ok"]`);
+      await ctx.waitFor(`document.querySelector('${BODY} [data-preset="${key}"]').textContent === 'Aud test renamed'`, 'renamed pill');
+      ctx.equal(await userKey(), key, 'rename keeps the preset key');
+      ctx.assert(!!(await presetOf('Aud test renamed')) && !(await presetOf('Aud test (1)')), 'rename stored');
+      await click(`${BODY} [data-act="delete"]`);
+      await ctx.waitFor(`!document.querySelector('${BODY} [data-preset^="user_"]')`, 'deleted pill gone');
+      await ctx.sleep(400);
+      ctx.assert(!(await presetOf('Aud test renamed')), 'deleted preset removed from storage');
+      ctx.equal((await nat('/config')).preset, 'custom', 'deleting the selected preset leaves the values as "custom"');
+    }
+
+    // ---- per-user popover (needs another connected user and the native module)
+    if (nativeUp) {
+      const peer = await ctx.eval(`(() => { const a = __ts6mod.mods().get('audio').api; const l = a.peers.list().filter(p => !p.self && p.uid); return l.find(p => p.nickname === 'AudT') || l[0] || null; })()`);
+      if (!peer) ctx.log('no other user connected: per-user popover part skipped');
+      else {
+        await ctx.eval(`(() => { const a = __ts6mod.mods().get('audio').api; window.__audPostOrig = a.native.post; window.__audPosts = []; a.native.post = (p, b) => { window.__audPosts.push([p, b]); return window.__audPostOrig.call(a.native, p, b); }; return 1; })()`);
+        const lastOv = () => ctx.eval(`(() => { const p = window.__audPosts.filter(x => x[0] === '/speaker' && x[1].client_id === ${peer.id}); return p.length ? p[p.length - 1][1].override : undefined; })()`);
+        const rec = async () => ((await store()).users || {})[peer.uid];
+        const wasMuted = peer.muted;
+        // open through the real context menu of the user's row when it is rendered, else through the page's user list
+        await ctx.restoreRoute();
+        let rows = []; for (let i = 0; i < 15 && !rows.length; i++) { rows = await ctx.eval(`__ts6mod.anchors.tree.rows('client').map(r => r.model.id)`); if (!rows.length) await ctx.sleep(200); }
+        let how = 'list';
+        if (rows.includes(peer.id)) {
+          const opened = await ctx.eval(`(async () => {
+            const A = __ts6mod.anchors, cm = A.get('dom.contextMenu'), r = A.tree.rows('client').find(x => x.model.id === ${peer.id});
+            cm.data = null;
+            r.row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 90, button: 2, buttons: 2 }));
+            for (let i = 0; i < 20 && !cm.data; i++) await new Promise(res => setTimeout(res, 100));
+            const s = (cm.data && cm.data.sections || []).find(s => s.title === 'Mods'); const it = s && s.items.find(i => i.title === 'Audio...');
+            if (!it) return 'no menu item'; it.onSelected(new MouseEvent('click')); return 'ok'; })()`);
+          ctx.equal(opened, 'ok', 'right-click menu offers "Audio..."');
+          await ctx.eval(`__ts6mod.anchors.get('dom.contextMenu').data = null`); how = 'menu';
+        } else ctx.log('peer row not rendered in the channel tree: popover opened from the page list (context-menu item not exercised)');
+        {
+          if (how === 'list') {
+            await ctx.openModsPage();
+            await ctx.waitFor(`!!document.querySelector('${BODY} .aud-user[data-uid="${peer.uid}"] [data-act="user-edit"]:not([hidden])')`, 'user listed on the page');
+            await click(`${BODY} .aud-user[data-uid="${peer.uid}"] [data-act="user-edit"]`);
+          }
+          await ctx.waitFor(`!!document.querySelector('${POP}')`, 'popover opens');
+          // volume (stock range), mute, boost
+          await setNum(POP, 'vol', -6); await ctx.sleep(300);
+          ctx.equal((await rec()).vol, -6, 'volume saved under the UID');
+          await clickText(POP, 'Mute'); await ctx.sleep(500);
+          ctx.equal((await rec()).mute, true, 'mute saved under the UID');
+          ctx.assert(await ctx.eval(`__ts6mod.mods().get('audio').api.peers.list().find(p => p.id === ${peer.id}).muted`), 'user is muted (stock local mute)');
+          await setNum(POP, 'boost', 6); await ctx.sleep(500);
+          ctx.equal((await rec()).boost, 6, 'boost saved');
+          ctx.equal((await lastOv()).gain_db, 6, 'boost pushed to the native module as gain_db');
+          await click(`${POP} [data-agc="bypass"]`); await ctx.sleep(500);
+          ctx.equal(await lastOv(), { gain_db: 6, enabled: false }, 'bypass pushed as enabled:false (+ gain)');
+          await click(`${POP} [data-agc="custom"]`); await ctx.sleep(300);
+          await setNum(POP, 'ratio', 8); await ctx.sleep(500);
+          ctx.equal((await lastOv()).params, { ratio: 8 }, 'custom AGC pushes only the ticked parameter');
+          ctx.assert(!(await ctx.eval(`!!document.querySelector('${POP} [data-key="lookahead_ms"]')`)), 'no lookahead field in the per-user override');
+          // close, switch the mod off and on: everything cleared, then re-pushed from the UID record (as after a reconnect)
+          await ctx.disable('audio'); await ctx.sleep(500);
+          ctx.assert(!(await ctx.eval(`__ts6mod.anchors.get('app.connections')[0].serverConnectionHandler.GetFlatListClients && [...__ts6mod.anchors.get('app.connections')[0].serverConnectionHandler.GetFlatListClients()].find(c => c.id === ${peer.id}).properties.isMuted`)), 'mod off: our local mute is lifted');
+          await ctx.enable('audio'); await nat('/config', { enabled: false });
+          await ctx.eval(`(() => { const a = __ts6mod.mods().get('audio').api; window.__audPostOrig = a.native.post; window.__audPosts = []; a.native.post = (p, b) => { window.__audPosts.push([p, b]); return window.__audPostOrig.call(a.native, p, b); }; return 1; })()`);
+          await ctx.sleep(3500);
+          ctx.equal((await lastOv()), { gain_db: 6, params: { ratio: 8 } }, 'after re-enable the override is pushed again from the stored UID record');
+          ctx.assert(await ctx.eval(`__ts6mod.mods().get('audio').api.peers.list().find(p => p.id === ${peer.id}).muted`), 'mute re-applied from the record');
+          // reset everything for the user: record gone, native override cleared, mute lifted
+          await ctx.eval(`window.__audPosts.length = 0`);
+          await ctx.openModsPage();
+          await ctx.waitFor(`!!document.querySelector('${BODY} .aud-user[data-uid="${peer.uid}"] [data-act="user-edit"]:not([hidden])')`, 'saved user listed on the page');
+          await click(`${BODY} .aud-user[data-uid="${peer.uid}"] [data-act="user-edit"]`);
+          await ctx.waitFor(`!!document.querySelector('${POP}')`, 'popover opens from the saved-user list');
+          await clickText(POP, 'Reset everything'); await ctx.sleep(600);
+          ctx.assert(!(await rec()), 'reset removes the record');
+          ctx.equal(await lastOv(), null, 'reset clears the native override');
+          ctx.assert(await ctx.eval(`__ts6mod.mods().get('audio').api.peers.list().find(p => p.id === ${peer.id}).muted`) === wasMuted, 'reset restores the local mute state');
+          await clickText(POP, 'Done');
+          await ctx.waitFor(`!document.querySelector('${POP}')`, 'popover closes');
+        }
+      }
+    }
+    await ctx.restoreRoute();
+    await ctx.waitFor(`document.querySelectorAll('${BODY}').length === 0`, 'settings DOM removed when the page is left');
+    await ctx.sleep(300);
+    const b = await reqs(); await ctx.sleep(700);
+    ctx.equal(await reqs(), b, 'no polling while the page is hidden');
+    await ctx.disable('audio');
+    await ctx.assertClean('audio');
+    if (nativeUp) { const st = await nat('/status'); ctx.assert(st.enabled === false && st.mode === 'passthrough', 'mod off -> native AGC off again'); }
+    const c = await reqs(); await ctx.sleep(500);
+    ctx.equal(await reqs(), c, 'no polling after disable');
+  } finally {
+    await restore();
   }
-  await ctx.restoreRoute();
-  await ctx.waitFor(`document.querySelectorAll('${BODY}').length === 0`, 'settings DOM removed when the page is left');
-  await ctx.sleep(300);
-  const b = await reqs(); await ctx.sleep(700);
-  ctx.equal(await reqs(), b, 'no polling while the page is hidden');
-
-  await ctx.openModsPage();
-  await ctx.waitFor(`document.querySelectorAll('${BODY}').length === 1`, 'area is back');
-  await ctx.disable('audio');
-  await ctx.waitFor(`document.querySelectorAll('${BODY}').length === 0`, 'area removed on disable');
-  await ctx.assertClean('audio');
-  const c = await reqs(); await ctx.sleep(500);
-  ctx.equal(await reqs(), c, 'no polling after disable');
 }

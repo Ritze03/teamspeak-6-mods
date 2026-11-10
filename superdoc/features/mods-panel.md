@@ -10,7 +10,7 @@ underlying mechanics in [ts6-ui-extension-points.md](ts6-ui-extension-points.md)
 - `panel/core/`: framework (`anchors.js`, `core.js`, `slots.js`, `page.js`, `core.css`). The Mods page is
   `panel/core/page.js` (`boot.page.install`); it is a Settings category pushed into the settings mode list by
   `anchors.js:addSettingsPage`.
-- `panel/mods/audio/`: the AGC section (native module controls + the two stock TeamSpeak playback AGC toggles).
+- `panel/mods/audio/`: the AGC page, per-user audio popover and the two stock TeamSpeak playback AGC toggles (see below).
 - `panel/mods/dashboard/`: the Dashboard button.
 - Injected by `tools/cdp/mods-inject.mjs` (bundle built by `tools/cdp/bundle.mjs`): one CDP socket stays open,
   `Page.addScriptToEvaluateOnNewDocument` + `Runtime.evaluate` (never `Page.reload`), plus the binding `ts6modNative` through
@@ -23,11 +23,12 @@ request and holds no timer until it is shown.
 
 ## Audio mod
 
-The old single-file panel's AGC section, ported as is (a later task rebuilds it). Inside the mod's area: the native "Better AGC
-(whole stream)" switch (stays in the native config file: the audio hook needs it at client start, before any UI exists), presets,
-strength, advanced fields, live meters, and the two stock toggles (TeamSpeak's playback AGC, experimental AGC mode; via
-`api.audio`). Polling (meters 120 ms, status 2 s) runs in the settings scope, i.e. only while the page is shown and the mod is on.
-The mod switch only shows or hides this UI; it does **not** switch the native AGC (its own switch inside does).
+`panel/mods/audio/` (+ `panel/core/x-audio.js`): the AGC page (master switch, whole-stream / per-speaker mode, every DSP parameter,
+built-in and own presets, live meters, per-speaker list, per-user list), the per-user "Audio..." popover and the two stock TeamSpeak
+playback AGC toggles. Everything is in the mod's area on the Mods page; polling (meters 120 ms, status 2 s) runs in the settings scope, i.e.
+only while the page is shown and the mod is on. Details, presets and the control API: [agc.md](agc.md).
+**The mod switch also switches the native AGC**: off = native `enabled:false` (persisted by the native module), on = the user's own master
+choice is restored (vanilla rule, see [agc.md](agc.md)).
 
 ## Dashboard button
 
@@ -35,8 +36,7 @@ Dashboard = the client's home/start page. Natively it is reached through the mai
 selects the app item `appController.dashboard`. The mod's button calls the same action (`api.nav.showDashboard`).
 
 - Switch: Settings -> Mods -> "Dashboard button", **default off**, stored in the mods blob (before the framework it was
-  `dashboard_button` in the native config; the native module still accepts that key but nothing reads it any more, so existing
-  users switch the mod on once).
+  `dashboard_button` in the native config; that key was removed from the native module, so existing users switch the mod on once).
 - Code: `panel/mods/dashboard/index.js` is one `api.sidebar.addIcon({title, icon:'dashboard', onClick, active})`. The slot lives in
   `panel/core/slots.js` (`api.sidebar`) and `panel/core/anchors.js` (`sidebarBlock`, `sidebarPlace`).
 - Placement: the left icon column (contacts, chats, bookmarks, groups). Each of those icons is its own icon-group block inside

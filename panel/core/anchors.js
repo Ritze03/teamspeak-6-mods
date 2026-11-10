@@ -232,7 +232,7 @@
   const ROW = '.ts-server-tree-item-leaf.client, .ts-server-tree-item-leaf.channel';
   function rowTarget(row) {
     if (!row) return null;
-    const vm = row.__vue__, m = vm && (vm.$props && vm.$props.data || vm.data); if (!m) return null;
+    const vm = row.__vue__, m = vm && (vm.$props && (vm.$props.data || vm.$props.item) || vm.data); if (!m) return null;
     const kind = row.classList.contains('client') ? 'client' : 'channel';
     return { kind, id: m.id, schid: m.sc_handler && m.sc_handler.id, model: m, name: kind === 'client' ? m.nickname : (m.properties && m.properties.name) };
   }
@@ -255,7 +255,7 @@
   const KIND = { client: { sel: '.ts-server-tree-item-leaf.client', host: '.ts-server-tree-client-info__name-row' }, channel: { sel: '.ts-server-tree-item-leaf.channel:not(.spacer)', host: '.ts-server-tree-item-node-content.channel' } };
   function treeRows(kind) {
     const k = KIND[kind]; if (!k) throw new Error('unknown row kind ' + kind);
-    return $$(k.sel).map(row => { const vm = row.__vue__, model = vm && vm.$props && vm.$props.data, host = $(k.host, row); return model && host ? { row, host, model } : null; }).filter(Boolean);
+    return $$(k.sel).map(row => { const vm = row.__vue__, model = vm && vm.$props && (vm.$props.data || vm.$props.item), host = $(k.host, row); return model && host ? { row, host, model } : null; }).filter(Boolean);
   }
   const treeRoot = () => tryGet('dom.treeScroller') || document.body;
 

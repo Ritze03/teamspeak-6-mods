@@ -1,0 +1,23 @@
+.aud-param { margin: 4px 0 8px; }
+.aud-param .mods-field { margin-bottom: 0; }
+.aud-help { margin: 0 0 2px; font-size: 12px; line-height: 1.35; opacity: .7; }
+.aud-name { width: 200px; background: var(--mods-field-bg); color: inherit; border: 1px solid var(--mods-field-line); border-radius: 4px; padding: 3px 6px; font: inherit; }
+.aud-inline-err { margin: 0; }
+.aud-modified { margin-left: 4px; }
+.aud-sprow, .aud-user { display: grid; grid-template-columns: 130px minmax(160px, 1fr) 110px auto auto; align-items: center; gap: 10px; margin: 6px 0; }
+.aud-user { display: flex; flex-wrap: wrap; }
+.aud-uname { min-width: 140px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aud-bars { display: grid; gap: 4px; }
+.aud-vals { display: grid; font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; min-width: 120px; }
+.aud-vals .mods-meter-v { text-align: right; }
+.aud-lg { font-size: 12px; opacity: .85; font-variant-numeric: tabular-nums; }
+.aud-idle { opacity: .45; }
+.aud-ovr { font-size: 11px; padding: 1px 8px; }
+.aud-pop { min-width: 420px; max-width: 560px; }
+.aud-uparam { display: grid; grid-template-columns: 22px 1fr; align-items: center; gap: 6px; }
+.aud-uparam .mods-field { grid-template-columns: 130px 1fr 90px; }
+.aud-umeters .mods-meter { grid-template-columns: 110px 1fr 80px; }
+@media (max-width: 700px) { .aud-sprow { grid-template-columns: 1fr; } .aud-pop { min-width: 0; } }
+[data-ts6mod="audio"] [hidden] { display: none !important; }
+[data-ts6mod="audio"] .mods-note { font-size: 13px; }
+.aud-pop { text-align: left; }
