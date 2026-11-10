@@ -85,6 +85,7 @@ Only server chats (channel / private) are handled; Matrix-style chat rooms have 
    client received the same N messages in order with arrival gaps >= 300 ms and that, with the added fences removed, they rejoin to the
    original; repeats with delay 0, checks a short message goes out as one unchanged message, then disables and asserts the original
    limit, no hint, `assertClean`. The sending part runs only if the client is connected to 127.0.0.1 (never posts to a real server).
+   Elsewhere the hint is checked with `setText` and no typing, and the user's draft is put back afterwards.
 3. Typing very long text is slow in TeamSpeak's own editor (about 6 s for 6000 characters even with the mod off, roughly quadratic), so the
    test uses real typing once and `chatInput.setText` for the other runs.
 

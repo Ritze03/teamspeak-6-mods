@@ -51,7 +51,10 @@ server tabs and their click; density 70 % shrinks rows live and off restores the
 every hide key hides all matching elements and off restores them (elements not on screen are skipped with a log line).
 Hide targets exist on the server view (tree/info page) and on the Dashboard; the test visits both.
 The test edits the stored `layout` settings only in memory and restores them; driving the slider writes the settings blob
-(density back at 100).
+(density back at 100); run-all puts the persisted blob back at the end.
+Not on the local test server (`ctx.onTestServer()` false) the chat-tab part only counts the open chats and checks their tabs,
+never opens a private chat (`x-layout.js:openChats(n>0)` itself refuses unless every connection is local). Hide keys the client
+or theme already hides while the mod is off are only checked for "hidden while on" (graphite hides the join button).
 
 Manual: unread badge (let another user write to you while another tab is shown), many tabs (the strip scrolls with the wheel),
 custom themes.

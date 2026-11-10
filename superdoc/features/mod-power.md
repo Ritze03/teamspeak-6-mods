@@ -28,7 +28,9 @@ All settings are on the Mods page under the Power switch (stored with `api.stora
    - Mods: Enable/Disable every mod except Power itself (in-memory and persisted, same as the Mods page switch).
    - Server: Switch to `<server>` for every other open server tab.
    - Channel: Join `<channel path>` for every channel of the displayed server except the one you are in. A
-     password-protected channel is listed with a "password" tag and the join reports that it is protected.
+     password-protected channel is listed with a "password" tag and the join reports that it is protected. Spacer channels
+     (`[spacer]`, `[cspacer]`, `[*spacer...]` names, `x-power.js:SPACER`) are decorative and not offered; their tag is
+     stripped from channel paths.
    Running an item closes the palette first, then runs it; failures show a toast.
 3. **Developer toggles.** Section *Hidden developer toggles* lists the client's hidden developer options with their live
    values and a switch each (keep active items in place, restore opened chats, skip UI permission checks, disable animated
@@ -86,7 +88,10 @@ arrows move, Esc and the hotkey close it, it opens with a text field focused, "m
 searching a channel name + Enter joins it (own channel id changes; the channel you are in is not offered) -> Mods page:
 developer section lists every flag with the warning, clicking one switch flips the client setting and clicking again
 restores it -> disable: no palette, no copy entries, `assertClean`. The test grants itself focus emulation and clipboard
-permission over CDP (the test window is not focused); it joins another channel and goes back at the end.
+permission over CDP (the test window is not focused; run-all puts the clipboard text back at the end). The palette join (join
+another channel, go back) runs only on the local test server; on any other server it is a SKIP. The channel copy part picks a
+channel whose row is rendered (the tree is a virtual list). Menu icons must be TS icon names (`item-copy`): an unknown name made
+the client drop the item from the menu.
 
 Manual: right-click a user, pick *Copy unique ID*, paste somewhere; press Ctrl+K, type part of a channel name, Enter.
 

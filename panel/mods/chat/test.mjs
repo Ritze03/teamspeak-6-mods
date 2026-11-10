@@ -1,5 +1,6 @@
 // Chat mod ("Split long messages"): real-client test. Needs the LOCAL test server: the client under test must be connected to
-// 127.0.0.1 (otherwise the typing/sending part is skipped, so this can never post to a real server) and, for the receiving
+// 127.0.0.1 (ctx.onTestServer(); otherwise the real typing and sending are skipped, so this can never post to a real server: there the
+// hint is checked on text put into the composer's model only, the editor is never typed into, and the draft is put back) and, for the receiving
 // checks, a second plain client in the same channel with CDP on TS6MOD_CHAT_CDP2 (default 9266). See
 // superdoc/features/mod-chat.md "Test procedure". The pure splitter has its own test: node panel/mods/chat/split.test.mjs
 import { createRequire } from 'node:module';
@@ -32,6 +33,8 @@ export default async function (ctx) {
   const stock = await ctx.eval(`__ts6mod.anchors.chat.inputs()[0].maxInputLength`);
   ctx.assert(stock >= 1024, 'stock input limit read: ' + stock);
 
+  const local = await ctx.onTestServer();
+  const draft = await ctx.eval(`__ts6mod.anchors.chat.inputs()[0].msg || ''`);
   await ctx.enable('chat');
   await ctx.waitFor(`__ts6mod.anchors.chat.inputs()[0].maxInputLength > ${stock}`, 'the input limit is raised', 4000);
   ctx.assert(await ctx.eval(`__ts6mod.anchors.chat.inputs()[0].maxInputLength >= 40000`), 'raised to the configured limit (default 40000)');
@@ -41,13 +44,23 @@ export default async function (ctx) {
   const budget = stock - 32, text = longText(32, 140, 1), expected = splitParts(text, { limit: budget, escLimit: ESC_LIMIT });
   ctx.assert(byteLength(text) > stock && expected.length >= 2, `test text is over the limit: ${byteLength(text)} bytes -> ${expected.length} parts`);
 
-  const local = await ctx.eval(`__ts6mod.anchors.get('app.controller').connections.length > 0 && __ts6mod.anchors.get('app.controller').connections.every(c => c.connectInfo && /^(127\\.0\\.0\\.1|localhost)$/.test(c.connectInfo.address))`);
   const type = async t => {   // real, trusted typing into the editor
     await ctx.eval(`${MOD}.chatInput.element().focus()`);
     await ctx.cdp.send('Input.insertText', { text: t });
   };
   const enter = async () => { for (const type of ['rawKeyDown', 'keyUp']) await ctx.cdp.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: type === 'rawKeyDown' ? '\r' : undefined }); };
 
+  if (!local) {
+    // real server: no typing (text typed into the editor would stay there and could be sent by the user); the hint is checked on the model
+    try {
+      await ctx.eval(`${MOD}.chatInput.setText(${JSON.stringify(text)}); document.dispatchEvent(new Event('input'))`);
+      await ctx.waitFor(`!!document.querySelector('${HINT}')`, 'hint appears', 5000);
+      const hint = await ctx.eval(`document.querySelector('${HINT}').textContent`);
+      ctx.equal(hint.match(/(\d+) parts/) && +hint.match(/(\d+) parts/)[1], expected.length, 'hint says "N parts" with N = the splitter result: ' + hint);
+    } finally { await ctx.eval(`(() => { __ts6mod.anchors.chat.inputs()[0].msg = ${JSON.stringify(draft)}; document.dispatchEvent(new Event('input')); return 1; })()`); }
+    await ctx.waitFor(`!document.querySelector('${HINT}')`, 'hint gone when the text is short again', 4000);
+    ctx.skip('real typing and sending split messages', 'posts to the server: local test server only');
+  } else {
   // 1. typing: the long text is accepted (not cut at the stock limit) and the hint shows the part count, live
   await type(text);
   await ctx.waitFor(`${MOD}.chatInput.text().length >= ${text.length - 5}`, 'the whole over-limit text is in the input (not cut at ' + stock + ')', 120000);
@@ -55,8 +68,6 @@ export default async function (ctx) {
   const hint = await ctx.eval(`document.querySelector('${HINT}').textContent`);
   ctx.equal(hint.match(/(\d+) parts/) && +hint.match(/(\d+) parts/)[1], expected.length, 'hint says "N parts" with N = the splitter result: ' + hint);
 
-  if (!local) { ctx.log('SKIPPED sending: the client is not connected to a local (127.0.0.1) server'); await ctx.eval(`${MOD}.chatInput.setText('')`); }
-  else {
     // 2. send with a delay; the second client records what arrives
     let c2 = null;
     try { c2 = await connect(+(process.env.TS6MOD_CHAT_CDP2 || 9266)); } catch (e) { ctx.log('second client not reachable: only the sender side is verified'); }
@@ -120,7 +131,7 @@ export default async function (ctx) {
 
   // 3. off: limit restored, hint and hook gone, nothing left behind
   await ctx.eval(`${MOD}.storage.remove('delayMs')`);
-  await ctx.eval(`${MOD}.chatInput.setText('')`);
+  if (local) await ctx.eval(`${MOD}.chatInput.setText('')`);
   await ctx.disable('chat');
   ctx.equal(await ctx.eval(`__ts6mod.anchors.chat.inputs()[0].maxInputLength`), stock, 'the original input limit is back after disable');
   ctx.equal(await ctx.eval(`document.querySelectorAll('[data-ts6mod="chat"]').length`), 0, 'hint and styles removed');

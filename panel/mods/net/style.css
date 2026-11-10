@@ -1,4 +1,8 @@
-.net-hud { display: inline-flex; align-items: center; gap: 5px; margin: 0 4px; padding: 2px 6px; border-radius: 12px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--mods-fg); cursor: pointer; white-space: nowrap; user-select: none; }
+.net-hud { display: inline-flex; align-items: center; gap: 5px; margin: 0 4px; padding: 2px 6px; border-radius: 12px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--mods-fg); cursor: pointer; white-space: nowrap; user-select: none; flex: 0 1 auto; min-width: 0; overflow: hidden; }
+/* a narrow pane (the toolbar sits in the left pane's title bar): what does not fit wraps to a second line, which is clipped, so the
+   data rate drops out as a whole instead of running under the next pane */
+.net-hud { flex-wrap: wrap; align-content: flex-start; row-gap: 12px; height: 21px; box-sizing: border-box; }
+.net-hud > * { flex: 0 0 auto; }
 .net-hud[hidden], .net-pop[hidden], .net-v[hidden] { display: none; }
 .net-hud:hover, .net-hud:focus-visible { background: var(--mods-hover); outline: none; }
 .net-glyph { width: 12px; height: 12px; fill: currentColor; opacity: .8; }

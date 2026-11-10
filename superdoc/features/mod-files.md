@@ -85,6 +85,8 @@ Checks, with a 1 MB limit and generated noise images: off = stock (7 MB image re
 untouched, GIF untouched, zip untouched (and stock-rejected above 5 MB), alpha PNG per setting (WebP / PNG / white background), output
 format WebP, attach button with real files in a temp dir (big compressed, small and text stay paths), reader refuses non-images and system
 files, Files-tab stand-in model (drop and button), off again restores the methods and the stock limit, `assertClean`.
+Nothing is ever uploaded (the composer's send is never called). When no composer appears within 6 s of opening the own channel
+chat, the chat parts are a SKIP and the Files-tab and reader parts still run.
 
 Manual, real images (local-only set, not in the repo): start the client with `launcher/ts6-mod`, open a chat (or force the composer as the
 test does), drop each PNG, read `window.__ts6modFilesLog` (original/new size, resolution, quality) and the preview chip. Real-set results

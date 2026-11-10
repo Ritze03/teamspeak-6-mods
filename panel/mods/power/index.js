@@ -70,7 +70,7 @@
       for (const e of COPY) {
         const ids = t => (e.kind === 'client' ? P.clientIds(t) : P.channelInfo(t));
         api.contextMenu[e.kind].add({
-          label: e.label, icon: 'copy',
+          label: e.label, icon: 'item-copy',
           visible: t => copyOn(e.key) && e.get(ids(t)) != null,
           onClick: async t => {
             const v = e.get(ids(t));
@@ -95,7 +95,7 @@
         for (const m of P.mods()) if (m.id !== 'power') add('Mods', (m.enabled ? 'Disable ' : 'Enable ') + m.title, () => P.setMod(m.id, !m.enabled), { kw: 'mod toggle switch ' + m.id });
         for (const s of P.servers()) if (!s.current) add('Server', 'Switch to ' + s.name, () => P.showServer(s.schid), { kw: 'tab connection server' });
         for (const c of P.channels()) {
-          if (c.current) continue;
+          if (c.current || c.decorative) continue;   // the channel we are in, and spacer decoration
           add('Channel', 'Join ' + c.path, async () => {
             try { await P.join(c.schid, c.id); api.toast('Joined channel', c.path); }
             catch (e) { api.toast('Could not join ' + c.path, c.password ? 'The channel is password protected.' : 'The server refused the move (status ' + (e && e.status) + ').'); }

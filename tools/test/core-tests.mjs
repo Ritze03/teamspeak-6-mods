@@ -3,7 +3,10 @@
 // (id "t-*") in the page, uses the slot, checks the effect, disables it and checks that nothing is left; the mods are
 // forgotten afterwards. Nothing here sends a chat message or changes server state: the chat hook is only exercised on a
 // fake composer, and on the real one just checked to be patched.
+import { buildBundle } from '../cdp/bundle.mjs';
 const APP = `__ts6mod.anchors.get('app.controller')`;
+// the model of a tree row: the own client row carries it as prop "data", other users' rows (another component) as "item"
+const ROWMODEL = `(r => { const p = r.__vue__ && r.__vue__.$props; return p && (p.data || p.item); })`;
 const reg = (id, src) => `__ts6mod.register(Object.assign({ id: '${id}', title: '${id}', description: 'test' }, ${src}))`;
 
 export const tests = [
@@ -51,6 +54,7 @@ export const tests = [
   }],
 
   ['core: bridge.call, version, native events, state', async c => {
+    const ev0 = (await c.trace()).events;   // other enabled mods have their own subscriptions
     await c.eval(reg('t-bridge', `{ enable(api) { window.__tb = { off: api.events.on('talkStatusChanged', () => {}) }; window.__api = api; } }`));
     await c.enable('t-bridge');
     const r = await c.eval(`(async () => { const api = window.__api;
@@ -62,9 +66,9 @@ export const tests = [
     c.assert(Array.isArray(r.build) && r.build[0] === r.v.build, 'bridge.call resolves (value, extra) as an array: ' + JSON.stringify(r.build));
     c.assert(r.rejected, 'bridge.call rejects on a non-zero status');
     c.assert(r.schid > 0 && r.own && r.nClients >= 1 && r.chan && r.conns >= 1 && r.hasModel, 'api.state.current(): ' + JSON.stringify(r));
-    c.equal((await c.trace()).events, { talkStatusChanged: 1 }, 'native event subscription counted');
+    c.equal((await c.trace()).events, Object.assign({}, ev0, { talkStatusChanged: (ev0.talkStatusChanged || 0) + 1 }), 'native event subscription counted');
     await c.disable('t-bridge');
-    c.equal((await c.trace()).events, {}, 'native event subscription removed on disable');
+    c.equal((await c.trace()).events, ev0, 'native event subscription removed on disable');
     await c.eval(`delete window.__api; delete window.__tb; __ts6mod.unregister('t-bridge')`);
   }],
 
@@ -153,27 +157,43 @@ export const tests = [
     c.assert(String(await c.eval(`window.__serverThrew`)).includes('not supported'), 'contextMenu.server.add throws a clear error: ' + await c.eval(`window.__serverThrew`));
 
     // tree row decoration
-    await c.waitFor(`document.querySelectorAll('.ts-server-tree-item-leaf.client .mods-deco').length > 0 && document.querySelectorAll('.ts-server-tree-item-leaf.channel .mods-deco').length > 0`, 'client and channel rows decorated');
-    c.assert(await c.eval(`[...document.querySelectorAll('.ts-server-tree-item-leaf.client')].every(r => { const d = r.querySelector('.mods-deco'); return d && d.textContent === '#' + r.__vue__.$props.data.id; })`), 'every client row shows its own id');
+    // rows are recycled and decorated by a debounced observer: wait until EVERY rendered row carries the marker of its own model
+    const rowsOk = kind => `(() => { const rows = [...document.querySelectorAll('.ts-server-tree-item-leaf.${kind}${kind === 'channel' ? ':not(.spacer)' : ''}')].filter(r => ${ROWMODEL}(r));
+      return rows.length > 0 && rows.every(r => { const d = r.querySelector('.mods-deco'); return d && d.textContent === '${kind === 'client' ? '#' : 'c'}' + ${ROWMODEL}(r).id; }); })()`;
+    await c.eval(`__ts6mod.mods().get('t-ui').api.treeRow.refresh()`);
+    await c.waitFor(rowsOk('client'), 'every client row shows its own id (own and other users\' rows)', 10000);
+    await c.waitFor(rowsOk('channel'), 'every channel row shows its own id', 10000);
+    const others = await c.eval(`[...document.querySelectorAll('.ts-server-tree-item-leaf.client:not(.self)')].filter(r => ${ROWMODEL}(r)).length`);
+    if (!others) c.skip('decoration / menu of another user\'s row', 'no other client is rendered in the tree');
 
     // context menu on a client row and a channel row
     const open = sel => c.eval(`(async () => { const cm = __ts6mod.anchors.get('dom.contextMenu'); cm.data = null;
       document.querySelector(${JSON.stringify(sel)}).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 90, button: 2, buttons: 2 }));
       for (let i = 0; i < 20 && !cm.data; i++) await new Promise(r => setTimeout(r, 100));
       const s = (cm.data && cm.data.sections || []).find(s => s.title === 'Mods');
-      return s ? s.items.map(i => i.title) : null; })()`);
+      const mine = s ? s.items.map(i => i.title).filter(t => /^(ts6mod|hidden item)/.test(t)) : [];   // items of other enabled mods (e.g. audio) are ignored
+      return mine.length ? mine : null; })()`);
     const closeMenu = async () => { await c.eval(`__ts6mod.anchors.get('dom.contextMenu').data = null`); await c.pressEscape(); };   // the menu stays drawn until a trusted key/click arrives
     c.equal(await open('.ts-server-tree-item-leaf.client.self'), ['ts6mod client item'], 'client menu has our visible item only');
-    await c.eval(`(() => { const s = __ts6mod.anchors.get('dom.contextMenu').data.sections.find(s => s.title === 'Mods'); s.items[0].onSelected(new MouseEvent('click')); })()`);
+    await c.eval(`(() => { const s = __ts6mod.anchors.get('dom.contextMenu').data.sections.find(s => s.title === 'Mods'); s.items.find(i => /^ts6mod/.test(i.title)).onSelected(new MouseEvent('click')); })()`);
     await closeMenu();
     c.equal(await c.eval(`window.__seen[0].slice(0, 2).concat([typeof window.__seen[0][2], window.__seen[0][4]])`), ['client', 'client', 'number', 'string'], 'onClick got a client target');
+    if (others) {   // another user's row (a different row component, model in "item")
+      c.equal(await open('.ts-server-tree-item-leaf.client:not(.self)'), ['ts6mod client item'], 'menu of another user\'s row has our item');
+      await c.eval(`(() => { const s = __ts6mod.anchors.get('dom.contextMenu').data.sections.find(s => s.title === 'Mods'); s.items.find(i => /^ts6mod/.test(i.title)).onSelected(new MouseEvent('click')); })()`);
+      await closeMenu();
+      const want = await c.eval(`${ROWMODEL}(document.querySelector('.ts-server-tree-item-leaf.client:not(.self)')).id`);
+      c.equal(await c.eval(`window.__seen.splice(1, 1)[0].slice(0, 3)`), ['client', 'client', want], 'onClick got the other user as target');
+    }
     c.equal(await open('.ts-server-tree-item-leaf.channel:not(.spacer)'), ['ts6mod channel item'], 'channel menu has the channel item');
-    await c.eval(`(() => { const s = __ts6mod.anchors.get('dom.contextMenu').data.sections.find(s => s.title === 'Mods'); s.items[0].onSelected(new MouseEvent('click')); })()`);
+    // the item has no icon: the menu draws an item only with a known icon name, so the slot falls back to one (regression: items vanished)
+    await c.waitFor(`__ts6mod.anchors.get('dom.contextMenu').$el.innerText.includes('ts6mod channel item')`, 'an item without an icon is drawn in the menu', 3000);
+    await c.eval(`(() => { const s = __ts6mod.anchors.get('dom.contextMenu').data.sections.find(s => s.title === 'Mods'); s.items.find(i => /^ts6mod/.test(i.title)).onSelected(new MouseEvent('click')); })()`);
     await closeMenu();
     c.equal(await c.eval(`window.__seen[1].slice(0, 2)`), ['channel', 'channel'], 'onClick got a channel target');
 
     // chat hook: the real composer is patched; the logic is exercised on a fake composer
-    c.assert(await c.eval(`__ts6mod.anchors.chat.inputs().every((v, i) => v.sendMessageContent !== window.__origSend[i])`), 'real composer instance is patched');
+    c.assert(await c.eval(`__ts6mod.anchors.chat.inputs().every(v => __ts6mod.anchors.chat.layers(v) === 1)`), 'real composer instance is patched (one layer, shared with other enabled mods that hook the composer)');
     c.assert(await c.eval(`__ts6mod.mods().get('t-ui').api.chatInput.available() && __ts6mod.mods().get('t-ui').api.chatInput.limit() > 0 && !!__ts6mod.mods().get('t-ui').api.chatInput.element()`), 'chatInput.available/limit/element');
     const fake = `(() => { const sent = []; const vm = { _isDestroyed: false, msg: '', maxInputLength: 10, chat: {}, $el: document.createElement('div'),
       sendMessageContent: async function () { sent.push(this.msg); } };
@@ -193,7 +213,7 @@ export const tests = [
 
     await c.disable('t-ui');
     c.equal(await c.eval(`document.querySelectorAll('.mods-deco').length`), 0, 'row decorations removed');
-    c.assert(await c.eval(`__ts6mod.anchors.chat.inputs().every((v, i) => v.sendMessageContent === window.__origSend[i])`), 'composer patch undone (original method back)');
+    c.assert(await c.eval(`__ts6mod.anchors.chat.inputs().every((v, i) => v.sendMessageContent === window.__origSend[i])`), 'composer back to its state before the test (stock method, or the layer of another enabled mod)');
     c.equal(await open('.ts-server-tree-item-leaf.client.self'), null, 'menu items gone');
     await closeMenu();
     await c.assertClean('t-ui');
@@ -244,5 +264,35 @@ export const tests = [
     const n = await c.eval(`document.querySelectorAll('.mods-mod').length`), m = await c.eval(`__ts6mod.list().length`);
     c.equal(n, m, 'one card per registered mod');
     await c.eval(`__ts6mod.goto('/')`);
+  }],
+
+  // last: it replaces the core in the page (what tools/cdp/mods-reload.mjs does), twice in a row, the second time while the first new
+  // core is still starting. Regression test for a leak: a core replaced during its start() went on enabling its mods into a core nobody
+  // could reach, so their DOM and chat-composer hook layers stayed (one Enter then sent the parts several times).
+  ['core: hot reload twice keeps exactly one composer hook layer, unload restores the stock method', async c => {
+    await c.eval(`__ts6mod.showOwnChannelChat()`);
+    await c.waitFor(`__ts6mod.anchors.chat.inputs().length > 0`, 'chat composer displayed', 8000);
+    await c.disable('chat');
+    await c.eval(`window.__stockSend = __ts6mod.anchors.chat.inputs()[0].sendMessageContent; 1`);
+    c.equal(await c.eval(`__ts6mod.anchors.chat.layers(__ts6mod.anchors.chat.inputs()[0])`), 0, 'no hook layer while every chat hook is off');
+    await c.enable('chat');
+    await c.eval(`document.dispatchEvent(new FocusEvent('focusin')); 1`);
+    await c.waitFor(`__ts6mod.anchors.chat.layers(__ts6mod.anchors.chat.inputs()[0]) === 1`, 'one hook layer with the chat mod on', 3000);
+    const bundle = buildBundle({ replace: true });
+    await c.eval(bundle); await c.eval(bundle);   // the second replaces a core that is still in its start()
+    await c.waitFor(`window.__ts6mod && __ts6mod.ready`, 'new core ready after two reloads', 30000);
+    c.equal(await c.eval(`__ts6mod.isEnabled('chat')`), true, 'a hot reload keeps the in-memory switch (chat still on)');
+    await c.eval(`document.dispatchEvent(new FocusEvent('focusin')); 1`); await c.sleep(300);
+    const st = await c.eval(`({ layers: __ts6mod.anchors.chat.layers(__ts6mod.anchors.chat.inputs()[0]), base: __ts6mod.anchors.chat.inputs()[0].sendMessageContent.__ts6modOrig === window.__stockSend,
+      core: document.querySelectorAll('style[data-ts6mod-core]').length, chatStyles: document.querySelectorAll('style[data-ts6mod="chat"]').length })`);
+    c.equal(st, { layers: 1, base: true, core: 1, chatStyles: 1 }, 'after two reloads: one hook layer directly on the stock method, one core stylesheet, one copy of the mod');
+    await c.disable('chat');
+    c.equal(await c.eval(`__ts6mod.anchors.chat.inputs()[0].sendMessageContent === window.__stockSend`), true, 'switching off puts the stock method back');
+    await c.enable('chat'); await c.eval(`document.dispatchEvent(new FocusEvent('focusin')); 1`);
+    await c.eval(`(() => { const core = __ts6mod; core.unload(); window.__afterUnload = __ts6modCarry; return 1; })()`);
+    c.equal(await c.eval(`__ts6modProbeVm = document.querySelector('.ts-chat-input-container').__vue__, __ts6modProbeVm.sendMessageContent === window.__stockSend`), true, 'unload() restores the stock method');
+    await c.eval(bundle);   // bring the framework back (the carried switch state included)
+    await c.waitFor(`window.__ts6mod && __ts6mod.ready`, 'framework back after unload', 30000);
+    await c.eval(`delete window.__stockSend; delete window.__afterUnload; delete window.__ts6modProbeVm; 1`);
   }],
 ];

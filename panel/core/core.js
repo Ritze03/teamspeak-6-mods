@@ -9,8 +9,9 @@
   const changeSubs = new Set();
   const parts = [];                             // api part builders: (api, rec) => void
   const stats = { nativeRequests: 0, loadErrors: [] };
-  let started = false, startError = null, versionInfo = { client: '', build: 0, chrome: '' };
+  let started = false, ready = false, unloaded = false, startError = null, versionInfo = { client: '', build: 0, chrome: '' };
   let store = { enabled: {}, settings: {} };
+  let startWant = null;   // ids start() is enabling (carried over by a hot reload that interrupts it)
   let loading = null;
   const warn = (what, e) => console.error('[ts6mod] ' + what, e);
   const fire = () => changeSubs.forEach(f => { try { f(); } catch (e) { warn('change listener', e); } });
@@ -46,7 +47,8 @@
 
   /* ---------- persistence: one JSON blob "mods" = {enabled:{id:bool}, settings:{id:{...}}} ---------- */
   let saveTimer = 0;
-  const saveStore = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { A.bridge.saveBlob('mods', JSON.stringify(store)); } catch (e) { warn('saving mods blob', e); } }, 250); };
+  const saveNow = () => { saveTimer = 0; try { A.bridge.saveBlob('mods', JSON.stringify(store)); } catch (e) { warn('saving mods blob', e); } };
+  const saveStore = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 250); };
   async function loadStore() {
     try { const t = await A.bridge.getBlob('mods'); const o = t ? JSON.parse(t) : {}; store = { enabled: o.enabled || {}, settings: o.settings || {} }; }
     catch (e) { warn('reading mods blob', e); store = { enabled: {}, settings: {} }; }
@@ -193,13 +195,14 @@
   }
 
   async function enableRec(rec) {
-    if (rec.enabled) return;
+    if (rec.enabled || unloaded) return;   // a replaced core (hot reload) never enables anything again
     rec.error = null; rec.enabled = true; rec.ledger = makeLedger(); const led = rec.ledger;
     rec.api = makeApi(rec, led); coreStyle(+1); rec.styleHeld = true;
     try {
       if (rec.css) rec.api.addStyle(rec.css);
       const r = rec.def.enable(rec.api); if (r && typeof r.then === 'function') await r;
     } catch (e) { rec.error = String(e && e.message || e); warn('enabling ' + rec.id, e); if (rec.ledger === led) disableRec(rec, true); }
+    if (unloaded && rec.enabled) disableRec(rec);   // the core was unloaded while enable() was awaiting
     fire();
   }
   function disableRec(rec, keepError) {
@@ -244,27 +247,43 @@
   const list = () => [...mods.values()].map(r => ({ id: r.id, title: r.def.title || r.id, description: r.def.description || '', enabled: r.enabled, source: r.source, error: r.error }));
 
   /* ---------- lifecycle ---------- */
+  /* Every await in start() is a point where a hot reload may unload this core (buildBundle({replace:true}) runs while the previous
+   * core is still starting). Without the unloaded checks the old start() carried on, installed its Mods page and enabled its mods
+   * into a core nobody can reach any more: their DOM, observers and chat-composer patches stayed for good (one Enter then went
+   * through several hook layers). Why carry: a hot reload keeps the in-memory switch state (also switches set with persist:false). */
   async function start() {
-    if (started) return;
+    if (started || unloaded) return;
     const ok = await A.ready();
+    if (unloaded) return;
     if (!ok) { startError = 'UI app not found (not the main UI page?)'; return; }
     await loadStore();
     versionInfo = await A.bridge.versionInfo();
+    if (unloaded) return;
+    const carry = window.__ts6modCarry; delete window.__ts6modCarry;
     started = true;
     boot.page.install();
-    for (const rec of mods.values()) if (store.enabled[rec.id]) await enableRec(rec);
+    const want = Array.isArray(carry) ? new Set(carry) : new Set([...mods.keys()].filter(id => store.enabled[id]));
+    startWant = want;
+    for (const rec of mods.values()) { if (unloaded) return; if (want.has(rec.id)) await enableRec(rec); }
+    ready = !unloaded;
+    fire();
   }
   function unload() {
+    const carry = (ready || !startWant ? [...mods.values()].filter(r => r.enabled).map(r => r.id) : [...startWant]).filter(id => !/^t-/.test(id));
+    unloaded = true;
     for (const rec of [...mods.values()].reverse()) disableRec(rec);
     try { boot.page.uninstall(); } catch (e) { warn('page uninstall', e); }
+    try { A.chat.restoreAll(); } catch (e) { warn('composer restore', e); }   // safety net: no composer keeps a hook layer of this core
     if (styleEl) { styleRefs = 0; coreStyle(0); }
+    if (saveTimer) { clearTimeout(saveTimer); saveNow(); }   // a pending debounced save is written now, not lost
+    if (started) window.__ts6modCarry = carry;
     delete window.ts6mod; delete window.__ts6mod; delete window.__ts6modReply; delete window.__ts6modBoot;
   }
 
   const core = {
     apiVersion: API_VERSION, register, unregister, load, start, unload, setEnabled, list, ledger, trace, stats,
     anchors: A,
-    get started() { return started; }, get error() { return startError; },
+    get started() { return started; }, get ready() { return ready; }, get unloaded() { return unloaded; }, get error() { return startError; },
     isEnabled: id => !!(mods.get(id) && mods.get(id).enabled),
     mods: () => mods, store: () => store, onChange: cb => { changeSubs.add(cb); return () => changeSubs.delete(cb); },
     addApiPart: p => parts.push(p), coreApi, makeApi, makeLedger, coreStyle, enableRec, disableRec,

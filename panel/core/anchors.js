@@ -59,7 +59,7 @@
   const cls = {
     card: 'ts-card ts-widget full', rowBox: 'ts-card-setting-container', toggleWrap: 'ts-toggle-wrapper ts-flex row', col: 'tsv-flex-column',
     subtitle: 'tsv-font-subtitle', toggle: 'ts-toggle', toggleInner: 'ts-toggle-inner', flex: 'tsv-flex tsv-flex-wrap tsv-flex-snd-center',
-    cardContent: 'ts-card-content',
+    cardContent: 'ts-card-content', view: 'tsv-view', scrollArea: 'tsv-body tsv-view tsv-scroll-area tsv-clearance', readable: 'tsv-readability ts-widget-container',
     group: 'tsv-resources-group', bar: 'tsv-bar tsv-tabs tsv-tabs-slim tsv-tabs-combined', tab: 'tsv-tab-item tsv-bar-item', flexCenter: 'tsv-flex tsv-flex-center', magnify: 'tsv-magnify',
     iconPlain: 'tsv-icon-no-animation tsv-icon-base-third-color',
   };
@@ -68,7 +68,7 @@
     if (cssText === null) { cssText = ''; for (const ss of document.styleSheets) { try { for (const r of ss.cssRules) cssText += (r.selectorText || '') + ' '; } catch (e) { /* cross-origin sheet */ } } }
     return cssText.includes('.' + c);
   };
-  for (const k of ['card', 'rowBox', 'toggle', 'toggleInner', 'cardContent', 'tab', 'group'])
+  for (const k of ['card', 'rowBox', 'toggle', 'toggleInner', 'cardContent', 'tab', 'group', 'scrollArea', 'readable'])
     for (const c of cls[k].split(' ').filter(c => /^ts-|^tsv-/.test(c)))
       def('class.' + c, 'CSS class .' + c + ' exists in the loaded stylesheets', () => cssHas(c));
 
@@ -150,9 +150,11 @@
     const { Vue } = vue(), modes = get('app.settingsModes');
     const ctor = Vue.extend({
       name: 'ts6-mods-page-' + page.key,
-      render(h) { return h('div', { class: cls.card + ' mods-card' }); },
-      mounted() { page.mount(this.$el); }, activated() { page.mount(this.$el); },
-      deactivated() { page.unmount(this.$el); }, beforeDestroy() { page.unmount(this.$el); },
+      // same frame as the stock settings pages: view > scroll area (overflow:auto) > readable column > card. Why: without the scroll
+      // area the page cannot scroll, everything below the window height was unreachable (seen with several mods switched on)
+      render(h) { return h('div', { class: cls.view }, [h('div', { class: cls.scrollArea }, [h('div', { class: cls.readable }, [h('div', { class: cls.card + ' mods-card', ref: 'host' })])])]); },
+      mounted() { page.mount(this.$refs.host); }, activated() { page.mount(this.$refs.host); },
+      deactivated() { page.unmount(this.$refs.host); }, beforeDestroy() { page.unmount(this.$refs.host); },
     });
     const desc = { component: 'ts-settings-view', keepAlive: true, renderKey: 'settings', image: page.icon || 'settings-addons', key: page.key, title: page.title, extraProps: { component: () => Promise.resolve(ctor) } };
     const i0 = modes.findIndex(m => m.key === page.key); if (i0 >= 0) modes.splice(i0, 1);
@@ -246,7 +248,10 @@
       const first = (d.buttons && d.buttons[0]) || (d.sections[0] && d.sections[0].items && d.sections[0].items[0]); if (!first) return;
       const Item = first.constructor;
       const target = rowTarget(row); row = null;   // a stale row must not leak into a menu opened some other way
-      try { hook(d, target, (label, ic, fn) => new Item(label, ic, fn)); } catch (e) { console.error('[ts6mod] context menu hook', e); }
+      // the menu draws an item only when its icon name is a known TS icon (an unknown name or '' renders nothing at all), so fall back
+      const known = new Set(Object.values(cm.TSIcon || {}));
+      const icon = ic => (known.size && !known.has(ic) ? 'settings-addons' : ic || 'settings-addons');
+      try { hook(d, target, (label, ic, fn) => new Item(label, icon(ic), fn)); } catch (e) { console.error('[ts6mod] context menu hook', e); }
     });
     return () => { document.removeEventListener('contextmenu', rec, true); unwatch(); };
   }
@@ -262,12 +267,22 @@
   /* ---- chat composer ---- */
   const chatInputs = () => $$('.ts-chat-input-container').map(e => e.__vue__).filter(v => v && typeof v.sendMessageContent === 'function');
   const chatInfo = vm => ({ limit: vm.maxInputLength, text: vm.msg, element: vm.$el.querySelector('.cm-content') || vm.$el, kind: vm.chat ? 'chat' : (vm.room ? 'room' : 'unknown') });
-  /* wrap sendMessageContent of one composer instance: wrapper(orig, vm) returns the replacement function. Returns undo. */
+  /* wrap sendMessageContent of one composer instance: wrapper(orig, vm) returns the replacement function. Returns undo.
+   * Each wrapper is tagged with the function it replaced and with this core instance (LAYER), so that layers left by a core that
+   * was replaced (hot reload) are peeled off before patching, and unload() can put every composer back (chatRestoreAll). */
+  const LAYER = {};
   function chatPatch(vm, wrapper) {
+    let cur = vm.sendMessageContent;
+    while (cur && cur.__ts6modOrig && cur.__ts6modLayer !== LAYER) { vm.sendMessageContent = cur.__ts6modOrig; cur = vm.sendMessageContent; }   // stale layer of a dead core
     const had = Object.prototype.hasOwnProperty.call(vm, 'sendMessageContent'), orig = vm.sendMessageContent;
-    vm.sendMessageContent = wrapper(orig.bind(vm), vm);
-    return () => { if (had) vm.sendMessageContent = orig; else delete vm.sendMessageContent; };
+    const w = wrapper(orig.bind(vm), vm);
+    w.__ts6modOrig = orig; w.__ts6modLayer = LAYER;
+    vm.sendMessageContent = w;
+    return () => { if (vm.sendMessageContent !== w) { console.warn('[ts6mod] chat composer: another layer sits on top of ours, unwrapping it too'); } if (had) vm.sendMessageContent = orig; else delete vm.sendMessageContent; };
   }
+  /* number of ts6mod layers on a composer's send method (0 = the stock method) */
+  const chatLayers = vm => { let n = 0; for (let f = vm.sendMessageContent; f && f.__ts6modOrig && n < 50; f = f.__ts6modOrig) n++; return n; };
+  function chatRestoreAll() { for (const vm of chatInputs()) { let f = vm.sendMessageContent, n = 0; while (f && f.__ts6modOrig && n++ < 50) { vm.sendMessageContent = f.__ts6modOrig; f = vm.sendMessageContent; } } }
   const chatSetText = (vm, t) => { vm.msg = t; };
   const chatGetText = vm => vm.msg;
 
@@ -361,7 +376,7 @@
     sidebar: { block: sidebarBlock, place: sidebarPlace, observeRoot: sidebarObserveRoot },
     contextMenu: { hook: contextMenuHook },
     tree: { rows: treeRows, root: treeRoot },
-    chat: { inputs: chatInputs, info: chatInfo, patch: chatPatch, setText: chatSetText, getText: chatGetText },
+    chat: { inputs: chatInputs, info: chatInfo, patch: chatPatch, setText: chatSetText, getText: chatGetText, layers: chatLayers, restoreAll: chatRestoreAll },
     toast, toastCleanup, modal,
     state: { handlers, current: currentHandler, of: stateOf },
     audio: { readStock: readStockAgc, setStock: setStockAgc, setExperimental: setExperimentalAgc },

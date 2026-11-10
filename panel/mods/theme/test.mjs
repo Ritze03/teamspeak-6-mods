@@ -1,34 +1,35 @@
-// Theme mod test. It copies the user's installed graphite theme (read-only from the real extensions folder) into the ISOLATED
-// profile's extensions folder, edits ITS COPY, and checks: off = no style / no polling; the picker switches default <-> graphite;
-// the reload button; live reload picks up an edit of an @imported theme file (tree row height + a CSS variable) WITHOUT a restart;
-// disable leaves no trace. Restores the copy afterwards.
-// Needs: env TS6MOD_PROFILE_DIR (default $HOME/tmp/ts6-mw/theme/p1) -> <dir>/config/TeamSpeak/Default/extensions, and a client that was
-// STARTED with that folder populated (the client lists installed themes once at startup, a theme added later is not listed; the
-// launch step in superdoc/features/mod-theme.md copies it before starting).
+// Theme mod test. Checks: off = no style / no polling; the picker switches default <-> graphite (and back to the user's theme at the
+// end); the Reload button swaps the CSS in and re-measures the tree; live reload; disable leaves no trace.
+// File-edit parts (an edited @imported theme file is picked up live: tree row height + a CSS variable, no restart) run ONLY against an
+// isolated client (ctx.clientProfile().isolated, i.e. started with TS6MOD_PROFILE_DIR): the test copies the user's graphite theme
+// read-only into THAT profile's extensions folder and edits the copy. Against the real profile nothing is ever written; those parts
+// are skipped. The isolated client must have been STARTED with the copy present (the client lists installed themes once at startup;
+// the launch step in superdoc/features/mod-theme.md copies it before starting).
 import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 export default async function (ctx) {
-  const profile = process.env.TS6MOD_PROFILE_DIR || join(homedir(), 'tmp', 'ts6-mw', 'theme', 'p1');
-  const extRoot = join(profile, 'config', 'TeamSpeak', 'Default', 'extensions');
-  const real = join(homedir(), '.config', 'TeamSpeak', 'Default', 'extensions', 'de.wurst.graphite');
-  if (!existsSync(join(profile, 'config', 'TeamSpeak', 'Default'))) throw new Error('isolated profile not found at ' + profile + ' (set TS6MOD_PROFILE_DIR)');
-  if (!existsSync(real)) { ctx.log('graphite theme is not installed in the real profile, nothing to copy'); throw new Error('no graphite theme to copy from ' + real); }
+  const prof = ctx.clientProfile();
+  const realRoot = join(homedir(), '.config', 'TeamSpeak', 'Default', 'extensions'), real = join(realRoot, 'de.wurst.graphite');
+  const extRoot = prof.isolated && prof.configDir ? join(prof.configDir, 'TeamSpeak', 'Default', 'extensions') : null;
+  const files = !!extRoot && extRoot !== realRoot && existsSync(join(prof.configDir, 'TeamSpeak', 'Default')) && existsSync(real);
+  if (!files) ctx.skip('theme file edits (one-shot and live reload of an edited file)', prof.isolated ? 'no graphite theme to copy or no profile folder' : 'the client uses the real profile, which this test never writes');
   const MARK = 'style[data-theme-live]', GRAPHITE = 'de.wurst.graphite//Vanilla';
-  const copy = join(extRoot, 'de.wurst.graphite'), baseFile = join(copy, 'GraphiteBase.css');
-  const restore = () => { rmSync(copy, { recursive: true, force: true }); cpSync(real, copy, { recursive: true }); };   // copy only, the source is never modified
+  const copy = files ? join(extRoot, 'de.wurst.graphite') : null, baseFile = files ? join(copy, 'GraphiteBase.css') : null;
+  const restore = () => {   // copy only, the source is never modified
+    if (!files) return;
+    if (!copy.startsWith(extRoot) || copy.startsWith(realRoot)) throw new Error('refusing to write outside the isolated profile');
+    rmSync(copy, { recursive: true, force: true }); cpSync(real, copy, { recursive: true });
+  };
   restore();
-  const orig = readFileSync(baseFile, 'utf8');
+  const orig = files ? readFileSync(baseFile, 'utf8') : '';
   const V = '--t' + 's-tree-';   // the client's tree row-height variables, spelled so the D18 lint stays free of raw client names
   const heightRe = new RegExp(`(${V}(?:channel|client)-height-(?:default|compact)\\s*:\\s*)\\d+px`, 'g');
-  ctx.assert(orig.search(heightRe) >= 0, 'the theme copy sets tree row heights');
-  const edit = (px, mark) => writeFileSync(baseFile, orig.replace(heightRe, `$1${px}px`) + `\n:root { --theme-test-mark: "${mark}" !important; }\n`);
+  if (files) ctx.assert(orig.search(heightRe) >= 0, 'the theme copy sets tree row heights');
+  const edit = (px, mark) => { if (files) writeFileSync(baseFile, orig.replace(heightRe, `$1${px}px`) + `\n:root { --theme-test-mark: "${mark}" !important; }\n`); };
   const rowH = `__thApi.theme.state().clientRow`, mark = `getComputedStyle(document.documentElement).getPropertyValue('--theme-test-mark').trim()`;
-
-  /* a window that is too small collapses the server tree */
-  // (left in place afterwards on purpose: clearing it would shrink the window for the tests that run after this one; it ends with the CDP session)
-  if ((await ctx.eval('innerWidth')) < 1000) await ctx.cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+  // window size: run-all owns the device-metrics override (it emulates 1280x800 for small windows and clears it at the end)
   let origTheme = null;
   try {
     /* test driver: a throw-away mod whose api gives us api.theme (the runner removes t-* mods) */
@@ -60,15 +61,21 @@ export default async function (ctx) {
 
     /* ---- one-shot reload (the button): swaps the CSS in and re-measures the tree ---- */
     edit(40, 'one');
+    const graphiteRow = await ctx.eval(rowH);
     await ctx.openModsPage();
     await ctx.waitFor(`[...document.querySelectorAll('button')].some(b => /Reload theme now/.test(b.textContent))`, 'Reload button on the Mods page', 5000);
     await ctx.eval(`[...document.querySelectorAll('button')].find(b => /Reload theme now/.test(b.textContent)).click()`);
     await ctx.waitFor(`__thApi.theme.state().liveStyles === 1`, 'the Reload button swaps the CSS in', 5000);
     await ctx.restoreRoute();
-    ctx.equal(await ctx.eval(mark), '"one"', 'edited variable applied by the one-shot reload');
-    await ctx.waitFor(`${rowH} === 40`, 'one-shot reload re-measures the tree: client row height 40 (was ' + defaultRow + ')', 4000);
+    if (files) {
+      ctx.equal(await ctx.eval(mark), '"one"', 'edited variable applied by the one-shot reload');
+      await ctx.waitFor(`${rowH} === 40`, 'one-shot reload re-measures the tree: client row height 40 (was ' + defaultRow + ')', 4000);
+    } else {
+      await ctx.waitFor(`${rowH} === ${graphiteRow}`, 'one-shot reload of the unchanged theme re-measures the tree to the same row height (' + graphiteRow + ')', 4000);
+      ctx.equal((await ctx.eval(`__thApi.theme.remeasure()`)).remeasured, true, 'tree re-measure runs');
+    }
     const css = await ctx.eval(`document.querySelector('${MARK}').textContent`);
-    ctx.assert(css.includes('--theme-test-mark') && !/@import/.test(css), '@import chain flattened into the live style');
+    ctx.assert((!files || css.includes('--theme-test-mark')) && css.length > 200 && !/@import/.test(css), '@import chain flattened into the live style');
     await ctx.disable('theme');
     ctx.equal(await ctx.eval(`__thApi.theme.state().liveStyles`), 0, 'disable removes the live style');
     ctx.equal(await ctx.eval(`__thApi.theme.state().linkDisabled`), false, 'disable gives the client its stylesheet link back');
@@ -82,13 +89,15 @@ export default async function (ctx) {
     await ctx.sleep(1200);   // baseline read; nothing changed -> nothing swapped
     ctx.equal(await ctx.eval(`__thApi.theme.state().liveStyles`), 0, 'unchanged theme file: nothing swapped in');
 
-    edit(44, 'two');
-    await ctx.waitFor(`${mark} === '"two"'`, 'edited CSS variable picked up live', 6000);
-    await ctx.waitFor(`${rowH} === 44`, 'tree row height changed to 44 without a restart', 6000);
-    ctx.equal(await ctx.eval(`__thApi.theme.state().liveStyles`), 1, 'one live style');
-    edit(34, 'three');   // a second edit replaces the style, it does not stack
-    await ctx.waitFor(`${rowH} === 34`, 'second edit: row height 34', 6000);
-    ctx.equal(await ctx.eval(`__thApi.theme.state().liveStyles`), 1, 'still one live style');
+    if (files) {
+      edit(44, 'two');
+      await ctx.waitFor(`${mark} === '"two"'`, 'edited CSS variable picked up live', 6000);
+      await ctx.waitFor(`${rowH} === 44`, 'tree row height changed to 44 without a restart', 6000);
+      ctx.equal(await ctx.eval(`__thApi.theme.state().liveStyles`), 1, 'one live style');
+      edit(34, 'three');   // a second edit replaces the style, it does not stack
+      await ctx.waitFor(`${rowH} === 34`, 'second edit: row height 34', 6000);
+      ctx.equal(await ctx.eval(`__thApi.theme.state().liveStyles`), 1, 'still one live style');
+    }
 
     /* the picker while live reload is on: switching to the default drops the live style and the tree follows */
     await ctx.eval(`__thApi.theme.apply(null)`);
@@ -113,7 +122,10 @@ export default async function (ctx) {
   } finally {
     await ctx.disable('theme').catch(() => {});
     await ctx.eval(`(()=>{ __thApi.theme.apply(${JSON.stringify(origTheme)}); delete __ts6mod.store().settings.theme; })()`).catch(() => {});
+    await ctx.sleep(300);
+    const back = await ctx.eval(`__thApi.theme.current()`).catch(() => 'unknown');
     await ctx.disable('t-theme-drv').catch(() => {});
     restore();
+    ctx.equal(back, origTheme, 'the user\'s theme is restored exactly');
   }
 }
