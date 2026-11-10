@@ -67,7 +67,7 @@ for (;;) {
       let req, out;
       try {
         req = JSON.parse(m.params.payload);
-        if (!/^\/(config|status|meters)$/.test(req.path)) throw new Error('bad path');
+        if (!/^\/(config|status|meters|speakers|speaker)$/.test(req.path)) throw new Error('bad path');
         const r = await fetch(`http://127.0.0.1:${ctlPort}${req.path}`, { method: req.body === undefined ? 'GET' : 'POST', body: req.body === undefined ? undefined : JSON.stringify(req.body), signal: AbortSignal.timeout(1500) });
         out = { id: req.id, ok: r.ok, status: r.status, text: await r.text() };
       } catch (e) { out = { id: req?.id, ok: false, status: 0, text: String(e) }; }
