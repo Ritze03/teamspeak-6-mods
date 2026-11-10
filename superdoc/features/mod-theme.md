@@ -34,12 +34,21 @@ With the mod on but live reload off nothing is injected and no timer runs.
 - **Change detection**: `api.theme.check()` compares the flattened text (and link href) with the previous read. The first read
   after enabling/toggling is only a baseline (no swap). A changed theme (edit, or a different theme picked) swaps and re-measures;
   with no extension theme active the live style is dropped.
-- **Tree re-measure**: the server tree component reads `--ts-tree-{client-compact,client-default,channel-default,spacer-default}-height`
+- **Tree re-measure**: the server tree component reads `--ts-tree-client-height-compact`, `--ts-tree-client-height-default`, `--ts-tree-channel-height-default`, `--ts-tree-spacer-height-default`
   once in `mounted()` into data fields (`clientHeightCompact`, `clientHeightDetailed`, `channelHeightDefault`, `spacerHeightDefault`).
   The client's own `variableCache.recomputeCache` iterates a `Map` with `for..in` and never refreshes anything, and re-querying the
   cache returns wrong numbers (its measuring clone is stale). Working trick (`x-theme.js:treeRemount`): measure each variable with a
   hidden probe `<div>` (width = `var(--name)`) inside the tree's container, assign the four fields, call the component's
   `flattenServer()` and the virtual list's `refreshHeightCache()`. Verified: rows resize live.
+- **Re-measure on return to the tree**: a theme switched while no tree is shown (the picker lives on the Mods page, the stock
+  Appearance page is a Settings route too) cannot be re-measured then (`treeRemount` returns `no tree shown`), and the tree that
+  mounts when the view returns reads the client's stale cache. So while the mod is on, `panel/mods/theme/index.js` (`enable`) hooks
+  `api.onRoute` (tracked, removed on disable) and, 150/600/1500 ms after every route change, calls
+  `api.theme.remeasure({ifStale:true})`: it does nothing when no tree is shown or the component's four cached fields already equal
+  the computed variables (cheap probe compare, no rebuild), otherwise it re-measures. This covers the picker and the stock
+  Appearance switch. `api.theme.treeHeights()` returns the cached fields (diagnostics/tests).
+  Why: the tree is a new component after returning (it re-reads the stale cache in `mounted()`), so the post-switch timers
+  (`remeasureSoon`) alone can never help while the user is on another page; the delays cover the mount and the theme CSS landing.
 - **Why polling, no file watcher** (D14): no native changes and zero cost when off.
 
 Note: themes need `!important` on `:root` variables because the client injects its defaults after the theme link; the live style
@@ -47,15 +56,18 @@ sits at the link's position so it behaves the same.
 
 ## Test procedure
 
-Switching the theme from the picker re-measures the tree afterwards (400 ms and 1.2 s), because the client keeps the old theme's
-row heights cached and rows overlap until a restart otherwise (seen switching graphite -> default).
+Switching the theme from the picker re-measures the tree afterwards (400 ms and 1.2 s) and again whenever the view returns to the
+tree (see "Re-measure on return"), because the client keeps the old theme's row heights cached and rows overlap otherwise (seen
+switching graphite -> default from the Mods page).
 
 Automatic: `TS6MOD_PROFILE_DIR=<profile> node tools/test/run-all.mjs --cdp-port <cdp> --control-port <ctl> --only theme`
 (`panel/mods/theme/test.mjs`). It copies the installed graphite theme from the real extensions folder (read-only source) into
 `<profile>/config/TeamSpeak/Default/extensions/`, edits **its copy** (tree row heights + a marker variable in the imported base file),
 and checks: off = no live style/timer; picker default <-> graphite; the Reload button; live reload (300 ms poll) applies
 28 -> 44 -> 34 px client row height and the marker without a restart, one live style only; switching to the default drops it;
-disable = `assertClean`, later file edits ignored. The copy is restored at the end. The file part runs only when
+the picker switched on the Mods page (default and graphite) then back to the channel view: the tree's cached heights equal the
+computed variables and client rows do not overlap; the "Poll interval" field is not displayed while live reload is off (`hidden` must
+beat `.mods-field`'s `display:grid`, `panel/core/core.css`); disable = `assertClean`, later file edits ignored. The copy is restored at the end. The file part runs only when
 `ctx.clientProfile().isolated` (the client process's config dir is not the user's own); against the real profile it is a SKIP and
 only the picker, Reload and live-reload-without-edit checks run, and the original theme is asserted at the end. The test never
 writes outside the isolated extensions folder (`restore()` refuses).
@@ -72,4 +84,5 @@ tree rows change.
   listed until a restart. Editing files of listed themes is live. "Rescan themes" only helps if the client re-reads.
 - Only plain `@import url()` / `@import "..."` (no media/layer conditions) are inlined.
 - `tsui://` fetch relies on the no-cors read; if a client update blocks it, `check()` reports the error on the Mods page.
+- The return-to-tree re-measure runs up to 1.5 s after the route change; the tree may show the old row heights for that moment.
 - The built-in light/dark scheme is not part of the picker (only extension themes and the default).
