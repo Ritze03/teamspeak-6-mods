@@ -101,7 +101,13 @@
         treeShown: !!A.tryGet('theme.tree'), clientRow: r ? Math.round(r.getBoundingClientRect().height) : null }; };
 
     /* heights the tree has cached vs the ones the active theme computes (diagnostics) */
-    const rowsOverlap = () => { const r = [...document.querySelectorAll('.ts-server-tree-item-leaf.client')].map(e => e.getBoundingClientRect()).sort((a, b) => a.top - b.top); return r.some((x, i) => i && x.top < r[i - 1].bottom - 1); };
+    /* only rows rendered on screen: the virtual list parks pooled rows off screen at one shared top, which is not an overlap */
+    const rowsOverlap = () => {
+      const sc = A.tryGet('dom.treeScroller'), b = sc ? sc.getBoundingClientRect() : null, top = b && b.height > 0 ? b.top : 0, bot = b && b.height > 0 ? b.bottom : innerHeight;
+      const r = [...document.querySelectorAll('.ts-server-tree-item-leaf.client')].map(e => e.getBoundingClientRect())
+        .filter(x => x.height > 0 && x.bottom > top && x.top < bot).sort((a, b) => a.top - b.top);
+      return r.some((x, i) => i && x.top < r[i - 1].bottom - 1);
+    };
     const treeHeights = () => { const vm = A.tryGet('theme.tree'); return vm ? TREE_FIELDS.map(f => vm[f]) : null; };
     return { treeHeights, rowsOverlap, state, list, current, apply, rescan, activeSource, check, reset, remeasure, flattenUrl: u => flatten(u, 0, new Set()) };
   });
