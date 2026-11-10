@@ -1,11 +1,13 @@
-// Layout mod: chat tabs (open / switch / close, sidebar collapse + restore), server tabs, live row-height density, hide switches,
+// Layout mod: chat tabs (pinned current-channel tab, alignment with the chat pane, open / switch / reorder / close, sidebar collapse +
+// restore), live row-height density, hide switches,
 // settings page, clean disable. Needs a connected server (run-all opens one). The chat part needs one other client on the server
-// and sends "layout test" as a private message to up to two of them, so it runs ONLY on the local test server (ctx.onTestServer());
+// and sends "layout test" as a private message to up to two of them and into channels (moving the own client), so it runs ONLY on
+// the local test server (ctx.onTestServer());
 // on any other server it just checks that the chats that are already open get a tab each (nothing sent, opened or closed).
 export default async function (ctx) {
   const DEV = 'window.__ts6modLayoutDev';
   const probe = () => ctx.eval(`${DEV}.probe()`);
-  const cfg = o => ctx.eval(`__ts6mod.store().settings.layout = ${JSON.stringify(Object.assign({ chatTabs: false, serverTabs: false, density: 100, hide: {} }, o))}; 1`);
+  const cfg = o => ctx.eval(`__ts6mod.store().settings.layout = ${JSON.stringify(Object.assign({ chatTabs: false, density: 100, hide: {}, tabOrder: [] }, o))}; 1`);
   const orig = await ctx.eval(`JSON.stringify(__ts6mod.store().settings.layout ?? null)`);   // restored at the end (settings are read from memory on enable)
   const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
   let paneRestore = null;   // tree pane slot size to put back if the Create Channel part stops halfway
@@ -16,51 +18,81 @@ export default async function (ctx) {
     const base = await probe();
     ctx.equal(await ctx.eval(`document.querySelectorAll('.lay-strip').length`), 0, 'no tab strip while the mod is off');
 
-    /* ---- chat tabs ---- */
+    /* ---- chat tabs: pinned current-channel tab, alignment with the chat pane, open / switch / close, reorder ---- */
     await cfg({ chatTabs: true });
     await ctx.enable('layout');
     await ctx.waitFor(`document.querySelectorAll('.lay-strip').length === 1`, 'tab strip appears');
     await ctx.waitFor(`${DEV}.probe().sidebar === 62`, 'sidebar collapsed to its 62 px icon column');
-    ctx.equal(await ctx.eval(`document.querySelectorAll('.lay-tab.server').length`), 0, 'no server tabs with the server switch off');
+    ctx.equal(await ctx.eval(`document.querySelectorAll('.lay-tab.server').length`), 0, 'no server tabs (the server has no chat of its own)');
+    await ctx.waitFor(`document.querySelectorAll('.lay-tab.pinned').length === 1`, 'one pinned tab for the current channel');
+    const pinnedFirst = await ctx.eval(`(() => { const t = document.querySelector('.lay-strip .lay-tab'); return !!t && t.classList.contains('pinned') && !t.querySelector('.lay-tab-x'); })()`);
+    ctx.equal(pinnedFirst, true, 'the pinned tab is leftmost and has no close button');
+    ctx.equal(await ctx.eval(`document.querySelector('.lay-tab.pinned .lay-tab-title').textContent`), await ctx.eval(`${DEV}.ownChannel()`), 'pinned tab shows the own channel name');
+    await ctx.eval(`document.querySelector('.lay-tab.pinned').click()`);
+    await ctx.waitFor(`document.querySelector('.lay-tab.pinned.active')`, 'clicking the pinned tab shows the channel chat (pinned tab active)');
+    await ctx.sleep(500);
+    const al = await ctx.eval(`${DEV}.align()`);
+    if (al.chat != null && al.chat > al.toolbar + 12) ctx.assert(Math.abs(al.strip - al.chat) <= 1, `strip starts where the chat pane's content starts (${al.strip} vs ${al.chat})`);
+    else ctx.log(`chat pane content (${al.chat}) is left of the toolbar end (${al.toolbar}): strip starts after the toolbar (${al.strip})`);
+    const wasPane = await ctx.eval(`${DEV}.paneWidth(${DEV}.paneWidth() + 120)`);   // wider tree pane: the strip follows
+    paneRestore = wasPane;
+    await ctx.sleep(600);
+    const al2 = await ctx.eval(`${DEV}.align()`);
+    if (al2.chat != null && al2.chat > al2.toolbar + 12) ctx.assert(Math.abs(al2.strip - al2.chat) <= 1 && al2.chat !== al.chat, `after resizing the tree pane the strip follows (${al2.strip} vs ${al2.chat}, was ${al.chat})`);
+    await ctx.eval(`${DEV}.paneWidth(${wasPane})`); paneRestore = null;
     const local = await ctx.onTestServer();
-    const n = await ctx.eval(`${DEV}.openChats(${local ? 2 : 0})`);   // 0 = only count the open chats, send nothing
-    if (!local) {
-      if (n) await ctx.waitFor(`document.querySelectorAll('.lay-tab.chat').length === ${n}`, `one tab per already open chat (${n})`);
-      ctx.skip('opening, switching and closing chat tabs', 'needs private messages to other users: local test server only' + (n ? ` (the ${n} open chats got a tab each)` : ''));
-    } else if (n === 0) ctx.skip('chat tabs', 'no other client on the test server to chat with');
-    else {
-      await ctx.waitFor(`document.querySelectorAll('.lay-tab.chat').length === ${n}`, `one tab per open chat (${n})`);
-      ctx.equal(await ctx.eval(`document.querySelectorAll('.lay-tab.chat.active').length`), 1, 'exactly one active tab');
-      const ids = await ctx.eval(`[...document.querySelectorAll('.lay-tab.chat')].map(t => t.dataset.tab)`);
-      const active = await ctx.eval(`document.querySelector('.lay-tab.chat.active').dataset.tab`);
-      const other = ids.find(i => i !== active);
+    if (local) {
+      const chans = await ctx.eval(`${DEV}.channels()`), cur = await ctx.eval(`${DEV}.ownChannel()`);
+      const other = chans.find(c => c.name !== cur);
+      await ctx.eval(`${DEV}.channelChat()`);   // a message in the own channel: the client lists that channel chat as an open chat
+      ctx.equal(await ctx.eval(`[...document.querySelectorAll('.lay-tab.chat')].some(t => t.textContent.includes(${JSON.stringify(cur)}))`), false, 'the own channel chat gets no second tab (the pinned tab stands for it)');
       if (other) {
-        await ctx.eval(`document.querySelector('.lay-tab[data-tab="${other}"]').click()`);
-        await ctx.waitFor(`document.querySelector('.lay-tab[data-tab="${other}"]').classList.contains('active')`, 'clicking a tab shows that chat (it becomes active)');
-        ctx.equal(await ctx.eval(`document.querySelectorAll('.lay-tab.chat.active').length`), 1, 'still exactly one active tab');
+        await ctx.eval(`${DEV}.channelChat(${JSON.stringify(other.id)})`);
+        await ctx.waitFor(`document.querySelector('.lay-tab.pinned .lay-tab-title').textContent === ${JSON.stringify(other.name)}`, `pinned tab follows a channel move (${other.name})`);
+        await ctx.eval(`${DEV}.channelChat(${JSON.stringify(chans.find(c => c.name === cur).id)})`);   // back
+      }
+    }
+    const n = await ctx.eval(`${DEV}.openChats(${local ? 2 : 0})`);   // 0 = only count the open chats, send nothing
+    const own = await ctx.eval(`${DEV}.ownChannelChatOpen()`) ? 1 : 0;   // the own channel's chat item has no tab of its own
+    if (!local) {
+      if (n - own) await ctx.waitFor(`document.querySelectorAll('.lay-tab.chat').length === ${n - own}`, `one tab per already open chat (${n - own})`);
+      ctx.skip('opening, switching, reordering and closing chat tabs', 'needs private messages to other users: local test server only');
+    } else if (n - own < 1) ctx.skip('chat tabs', 'no other client on the test server to chat with');
+    else {
+      const m = n - own;
+      await ctx.waitFor(`document.querySelectorAll('.lay-tab.chat').length === ${m}`, `one tab per open chat (${m})`);
+      const ids = await ctx.eval(`[...document.querySelectorAll('.lay-tab.chat')].map(t => t.dataset.tab)`);
+      await ctx.eval(`document.querySelector('.lay-tab[data-tab="${ids[0]}"]').click()`);
+      await ctx.waitFor(`document.querySelector('.lay-tab[data-tab="${ids[0]}"]').classList.contains('active')`, 'clicking a tab shows that chat (it becomes active)');
+      ctx.equal(await ctx.eval(`document.querySelectorAll('.lay-tab.active').length`), 1, 'exactly one active tab (the pinned one is off)');
+      if (ids.length >= 2) {
+        /* drag the last chat tab in front of the first (pointer events, like a mouse drag) */
+        const keys0 = await ctx.eval(`[...document.querySelectorAll('.lay-tab.chat')].map(t => t.dataset.key)`);
+        await ctx.eval(`(() => { const tabs = [...document.querySelectorAll('.lay-tab.chat')], a = tabs[tabs.length - 1], b = tabs[0], ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(), y = ra.top + ra.height / 2;
+          const ev = (t, x) => a.dispatchEvent(new PointerEvent(t, { clientX: x, clientY: y, button: 0, buttons: t === 'pointerup' ? 0 : 1, pointerId: 1, bubbles: true }));
+          ev('pointerdown', ra.left + 30); for (let i = 1; i <= 8; i++) ev('pointermove', ra.left + 30 + (rb.left + 8 - ra.left - 30) * i / 8); ev('pointerup', rb.left + 8); })()`);
+        await ctx.sleep(300);
+        const keys1 = await ctx.eval(`[...document.querySelectorAll('.lay-tab.chat')].map(t => t.dataset.key)`);
+        ctx.equal(keys1[0], keys0[keys0.length - 1], 'drag and drop moves the tab in front of the first one');
+        ctx.equal(await ctx.eval(`document.querySelectorAll('.lay-drop').length`), 0, 'drop line removed after the drop');
+        const saved = await ctx.eval(`__ts6mod.store().settings.layout.tabOrder`);
+        ctx.equal(Array.isArray(saved) && saved[0] === keys1[0], true, 'the new order is saved (tabOrder)');
+        ctx.equal(await ctx.eval(`document.querySelector('.lay-tab[data-tab="${ids[0]}"]').classList.contains('active')`), true, 'a drag does not count as a click (active tab unchanged)');
       }
       await ctx.eval(`document.querySelector('.lay-tab.chat .lay-tab-x').click()`);
-      await ctx.waitFor(`document.querySelectorAll('.lay-tab.chat').length === ${n - 1}`, 'the x button closes the chat');
+      await ctx.waitFor(`document.querySelectorAll('.lay-tab.chat').length === ${m - 1}`, 'the x button closes the chat');
       ctx.equal(await ctx.eval(`${DEV}.openChats(0)`), n - 1, 'the client has one chat less too');
       while (await ctx.eval(`document.querySelectorAll('.lay-tab.chat').length`) > 0) await ctx.eval(`document.querySelector('.lay-tab.chat .lay-tab-x').click()`), await ctx.sleep(400);
+      ctx.equal(await ctx.eval(`(__ts6mod.store().settings.layout.tabOrder || []).length`), 0, 'closed tabs drop out of the saved order');
     }
+    await ctx.eval(`${DEV}.showDashboard()`);
+    await ctx.waitFor(`!document.querySelector('.lay-tab.pinned.active')`, 'the pinned tab is not active on the Dashboard');
+    await ctx.eval(`document.querySelector('.lay-tab.pinned').click()`);
+    await ctx.waitFor(`document.querySelector('.lay-tab.pinned.active')`, 'the pinned tab brings back the channel chat');
     await ctx.disable('layout');
     await ctx.waitFor(`${DEV}.probe().sidebar === ${base.sidebar}`, 'sidebar width restored when the mod is switched off');
     ctx.equal(await ctx.eval(`document.querySelectorAll('.lay-strip').length`), 0, 'strip removed');
     await ctx.assertClean('layout');
-
-    /* ---- server tabs ---- */
-    await cfg({ serverTabs: true });
-    await ctx.enable('layout');
-    await ctx.waitFor(`document.querySelectorAll('.lay-tab.server').length >= 1`, 'a tab per connected server');
-    const p = await probe();
-    ctx.equal(p.tab, parseInt(p.barVar), 'tabs are as high as the client bar (the bar-height variable)');
-    ctx.equal(await ctx.eval(`document.querySelectorAll('.lay-tab.chat').length`), 0, 'no chat tabs with the chat switch off');
-    await ctx.eval(`${DEV}.showDashboard()`);
-    await ctx.waitFor(`document.querySelectorAll('.lay-tab.server.active').length === 0`, 'no server tab is active on the Dashboard');
-    await ctx.eval(`document.querySelector('.lay-tab.server').click()`);
-    await ctx.waitFor(`document.querySelectorAll('.lay-tab.server.active').length === 1`, 'clicking the server tab shows the server');
-    await ctx.disable('layout');
 
     /* ---- density: live (enable with the tree on screen) and restore without a reload ---- */
     await ctx.eval(`${DEV}.showServer()`);
@@ -80,7 +112,7 @@ export default async function (ctx) {
     await ctx.openModsPage('layout');
     await ctx.waitFor(`document.querySelector('[data-ts6mod="layout"] input[type=range]')`, 'density slider on the Mods page');
     const toggles = await ctx.eval(`document.querySelectorAll('[data-ts6mod="layout"] input[type=checkbox]').length`);
-    ctx.assert(toggles >= 11, `settings show the tab, server-tab and hide switches (${toggles})`);
+    ctx.assert(toggles >= 10, `settings show the chat-tab and hide switches (${toggles})`);
     await ctx.eval(`(() => { const r = document.querySelector('[data-ts6mod="layout"] input[type=range]'); r.value = 130; r.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     await ctx.restoreRoute();
     await ctx.eval(`${DEV}.showServer()`);

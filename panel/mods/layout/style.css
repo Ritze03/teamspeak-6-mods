@@ -1,4 +1,5 @@
-/* Layout mod: the tab strip in the title bar. Tokens only (--mods-*); placement is set by index.js from the bar geometry. */
+/* Layout mod: the tab strip in the title bar (pinned current-channel tab, chat tabs, drop line while reordering). Tokens only
+   (--mods-*); placement is set by index.js from the chat pane / title bar geometry. */
 .lay-strip { position: fixed; z-index: 30; display: flex; align-items: center; gap: 4px; box-sizing: border-box; overflow-x: auto; overflow-y: hidden;
   scrollbar-width: none; -webkit-app-region: no-drag; pointer-events: none; color: var(--mods-fg); font-size: 13px; }
 .lay-strip::-webkit-scrollbar { display: none; }
@@ -7,7 +8,12 @@
   padding: 0 6px 0 12px; border-radius: 8px; background: var(--mods-field-bg); border: 1px solid transparent; cursor: pointer; user-select: none; -webkit-app-region: no-drag; }
 .lay-tab:hover { background: color-mix(in srgb, var(--mods-fg) 10%, var(--mods-field-bg)); }
 .lay-tab.active { background: var(--mods-hover); border-color: var(--mods-accent); }
-.lay-tab.server { flex-basis: 150px; padding-right: 12px; }
+.lay-tab.pinned { flex: 0 1 auto; min-width: 90px; max-width: 260px; padding-right: 12px; }
+.lay-tab-server { flex: 0 1 auto; min-width: 0; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mods-muted); font-size: 11px; }
+.lay-tab.chat { cursor: grab; }
+.lay-strip.dragging, .lay-strip.dragging .lay-tab { cursor: grabbing; }
+.lay-tab.dragging { opacity: .55; }
+.lay-drop { position: absolute; top: 3px; bottom: 3px; width: 3px; margin-left: -1px; border-radius: 2px; background: var(--mods-accent); pointer-events: none; }
 .lay-tab-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lay-tab.unread .lay-tab-title { font-weight: 600; }
 .lay-tab-icon { flex: 0 0 auto; display: inline-flex; width: 18px; height: 18px; }
