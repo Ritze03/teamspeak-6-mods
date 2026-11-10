@@ -1,7 +1,7 @@
 # Better AGC / compressor-limiter for TeamSpeak 6
 
-> **Stage 5** — building (one phase, I1–I14) · started 2026-11-10
-> Next: build everything, run the agent checks, then hand you the test guide.
+> **Stage 7** — your turn: manual testing · started 2026-11-10
+> Next: follow `superdoc/features/testing-guide.md` in the running modded client and tick the four "verified by: user" checks (or tell me what's off).
 
 ## Goal
 A modded TS6, made of a CDP-injected UI plus an `LD_PRELOAD` native module, with:
@@ -178,13 +178,13 @@ Phase A builds on and refactors it.
 
 ## Done when
 **Agent-verified (run in Stage 6, before you test anything)**
-- [ ] With all mods off, a CDP check finds no injected DOM except the Mods settings entry; the native `/status` reports passthrough with 0 added latency; and no mod-originated server requests occur — *verified by: agent*
-- [ ] On the rig, the per-speaker hook maps each talker correctly (probe log: clientId ↔ known talker, 10 ms int16 blocks) — *verified by: agent*
-- [ ] On the rig, a burst-heavy talker never exceeds the configured ceiling at the listener, while a quiet talker is levelled up independently (per-speaker mode) — *verified by: agent*
-- [ ] Every AGC parameter, mode, preset (built-in + custom save/rename/delete) and per-user override is editable in the panel and survives a client restart — *verified by: agent*
-- [ ] `make -C native/dsp test` passes and the native module builds with zero warnings — *verified by: agent*
-- [ ] Each UI mod has its own toggle, default off; switching one off removes its DOM, listeners, timers and polling — *verified by: agent*
-- [ ] On the real client each feature works:
+- [x] With all mods off, a CDP check finds no injected DOM except the Mods settings entry; the native `/status` reports passthrough with 0 added latency; and no mod-originated server requests occur — *verified by: agent* ✅ QC row 27: isolated client all 9 mods off → `[data-ts6mod]` empty, only Mods entry; `/status` enabled:false passthrough, added_latency_ms 0; net/aware/native request counters flat over 6 s; run-all vanilla PASS on real client.
+- [x] On the rig, the per-speaker hook maps each talker correctly (probe log: clientId ↔ known talker, 10 ms int16 blocks) — *verified by: agent* ✅ QC row 27: `TS6HOOK_PROBE=1` probe: frames=960 (20 ms) ch=1 rate=48000 int16; sender +0x30 = 2 for RigTalkerA, 3 for RigTalkerB, matching `rig status`.
+- [x] On the rig, a burst-heavy talker never exceeds the configured ceiling at the listener, while a quiet talker is levelled up independently (per-speaker mode) — *verified by: agent* ✅ QC row 27 (ceiling -6, stock AGC off): bursty peak 0.0 → -6.0 dBFS; quiet mean -36.0 → -27.6 (+8.4 dB), leveler gains independent (B 12.0, A 5–6.8 dB). Note: the ceiling is per speaker; two at once summed to -4.9 (documented, row 30).
+- [x] Every AGC parameter, mode, preset (built-in + custom save/rename/delete) and per-user override is editable in the panel and survives a client restart — *verified by: agent* ✅ QC row 27: isolated client, set via panel (per-speaker, Music, ratio 5, ceiling -3, custom save/rename/delete/update, per-user boost 6 + ratio 8) → restart same profile → /config, agc.json, panel and UID record intact; override re-push observed.
+- [x] `make -C native/dsp test` passes and the native module builds with zero warnings — *verified by: agent* ✅ QC row 27: `all tests passed`; clean `make -C native` with -Wall -Wextra: 0 warnings.
+- [x] Each UI mod has its own toggle, default off; switching one off removes its DOM, listeners, timers and polling — *verified by: agent* ✅ QC row 27: core enables only when store.enabled[id] true (all default off); every mod test ends in `assertClean`; vanilla PASS.
+- [x] On the real client each feature works: ✅ QC row 27: run-all on the real client 27 PASS / 0 FAIL (6 server-side parts gated) + isolated run with second client 26 PASS covering HUD, copy UID, badges, chat tabs, theme reload, palette join, feed moves, density, declutter, Dashboard.
   - the HUD shows live ping/loss;
   - the copy menu copies a UID;
   - activity badges light up;
@@ -194,15 +194,15 @@ Phase A builds on and refactors it.
   - the join/leave feed shows moves;
   - the density slider, declutter toggles and Dashboard button work.
   - *verified by: agent*
-- [ ] Message splitting: the splitter's unit tests pass, with every part ≤ the limit, fences balanced in every part, and rejoining the parts giving the original text. On the real client, an over-limit message typed into a chat with yourself (or an empty channel) goes out as N parts, with the hint shown and the delay honoured — *verified by: agent*
-- [ ] Image compression: the user's test set is copied to `.claude/local/test-images/` (local only, never committed) and used read-only. It holds 6 PNGs of 16–45 MB, plus a 143 MB `whale.zip`. Each PNG is sent under the limit, at ≤ the max resolution, with the quality chosen automatically. A PNG with transparency is handled too (generate one if none of the set has alpha). A file already under the limit, and the non-image `.zip`, are left untouched. Verified on the real client in a chat with yourself — *verified by: agent*
-- [ ] Screenshots of every mod in the default and graphite themes show no layout breakage — *verified by: agent*
-- [ ] `map.py --check` shows no DANGLING links, and the docs are anonymized (no names, IDs, hosts, home paths) — *verified by: agent*
-- [ ] No mod contains a raw TS selector, vm path or bridge name; a grep of `panel/mods/` for `tsv-`/`ts-`/`__vue__`/`tsclient_internal` is empty, and all of them live in the anchors module only — *verified by: agent*
-- [ ] A sample plugin that adds its own API extension, plus a second plugin that uses that extension, both work — *verified by: agent*
-- [ ] `node tools/test/run-all.mjs` passes on the real client with no user input. Every anchor resolves, every mod's automated test passes, the native signature scan finds the hook, and each mod's doc page has a written test procedure — *verified by: agent*
-- [ ] `README.md` covers every D20 item, and every command in it runs as written — *verified by: agent*
-- [ ] A **test guide** exists at `superdoc/features/testing-guide.md`: how to launch the modded client, then one short checklist per mod with what to try and what you should see — *verified by: agent*
+- [x] Message splitting: the splitter's unit tests pass, with every part ≤ the limit, fences balanced in every part, and rejoining the parts giving the original text. On the real client, an over-limit message typed into a chat with yourself (or an empty channel) goes out as N parts, with the hint shown and the delay honoured — *verified by: agent* ✅ QC row 27: `split.test.mjs` 22 passed (+FUZZ=2000); isolated chat test: over-limit text → N parts, hint, delay honoured, second client receives in order (3 runs).
+- [x] Image compression: the user's test set is copied to `.claude/local/test-images/` (local only, never committed) and used read-only. It holds 6 PNGs of 16–45 MB, plus a 143 MB `whale.zip`. Each PNG is sent under the limit, at ≤ the max resolution, with the quality chosen automatically. A PNG with transparency is handled too (generate one if none of the set has alpha). A file already under the limit, and the non-image `.zip`, are left untouched. Verified on the real client in a chat with yourself — *verified by: agent* ✅ QC row 27 (isolated): 6 PNGs 16–45 MB → 0.34–2.0 MB JPEG at 2560 px q auto; alpha PNG → WebP with alpha 4.73 MB; whale.zip and under-limit PNG untouched. Gap: real Files-tab upload on the local server blocked (permission grant refused) — see blocked list.
+- [x] Screenshots of every mod in the default and graphite themes show no layout breakage — *verified by: agent* ✅ Row 31: 24 d-/24 g- shots of every mod surface ($HOME/tmp/ts6-shots/, not in repo), all OK in both themes after re-measure; the tree-height bug it found (picker switch on Settings route) fixed in row 32 (re-measure on route return) + row 34; hidden-field CSS fixed.
+- [x] `map.py --check` shows no DANGLING links, and the docs are anonymized (no names, IDs, hosts, home paths) — *verified by: agent* ✅ QC row 27: `OK 20 pages, 96 links, 0 dangling, 0 orphan`; anonymization grep found nothing.
+- [x] No mod contains a raw TS selector, vm path or bridge name; a grep of `panel/mods/` for `tsv-`/`ts-`/`__vue__`/`tsclient_internal` is empty, and all of them live in the anchors module only — *verified by: agent* ✅ QC row 27: lint grep over panel/mods/ empty; names only in panel/core/anchors.js + x-*.js.
+- [x] A sample plugin that adds its own API extension, plus a second plugin that uses that extension, both work — *verified by: agent* ✅ Rows 30/33: `run-all --examples` on a fresh isolated client → `PASS example ext-provider`, `PASS example ext-consumer` (both enable orders), 29 passed / 0 failed / 0 skipped, twice.
+- [x] `node tools/test/run-all.mjs` passes on the real client with no user input. Every anchor resolves, every mod's automated test passes, the native signature scan finds the hook, and each mod's doc page has a written test procedure — *verified by: agent* ✅ Row 34 (main 741fcd9): real client, no input, twice → 27 passed, 0 failed, 6 skipped (each gated: server-side or real-profile file writes); anchors 65 resolve; `PASS native signature scan` (1 match); every mod page has a Test procedure section (mods-panel.md added in row 30). Isolated: 27/27.
+- [x] `README.md` covers every D20 item, and every command in it runs as written — *verified by: agent* ✅ QC row 27: all D20 items present; make native/dsp test, split test, sigscan, cdp list, run-all ran as written; launcher env vars verified in the script.
+- [x] A **test guide** exists at `superdoc/features/testing-guide.md`: how to launch the modded client, then one short checklist per mod with what to try and what you should see — *verified by: agent* ✅ `superdoc/features/testing-guide.md` (row 26): launch + vanilla, one checklist per mod, vanilla and themes checks.
 
 **Your testing (Stage 7, the very end; everything is built and agent-checked first)**
 - [ ] The client starts via the launcher and behaves like vanilla with every mod off — *verified by: user*

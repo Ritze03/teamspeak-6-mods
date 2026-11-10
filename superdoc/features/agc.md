@@ -5,7 +5,7 @@ mute, boost and AGC overrides. Built from four parts: a native preload module (`
 (`native/dsp`), an inline hook for per-speaker mode ([per-speaker-hook.md](per-speaker-hook.md)) and the injected `audio`
 mod (`panel/mods/audio/`, TeamSpeak names in `panel/core/x-audio.js`; framework: [ts6-mod-api.md](ts6-mod-api.md)).
 
-Related: [architecture overview](../architecture/overview.md), [ts6-modding-surface.md](ts6-modding-surface.md) (launch/attach, stock AGC
+Related: [ts6-native-agc.md](ts6-native-agc.md) (how the stock playback AGC and its experimental mode behave, measured), [architecture overview](../architecture/overview.md), [ts6-modding-surface.md](ts6-modding-surface.md) (launch/attach, stock AGC
 controls), [ts6-ui-extension-points.md](ts6-ui-extension-points.md), [mods-panel.md](mods-panel.md) (the Mods page),
 [test-rig.md](test-rig.md) (known talkers, recording). Tested on client `6.0.0-beta5.1` (Linux, PipeWire with the Pulse layer).
 
