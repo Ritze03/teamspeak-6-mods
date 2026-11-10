@@ -10,7 +10,7 @@ ts6mod.register({
   status: api => { const g = (k, d) => { const v = api.storage.get(k, undefined); return v === undefined ? d : v; }; return 'over ' + g('limitMB', 5) + ' MB, ' + g('maxRes', 2560) + ' px'; },
   description: 'Images over the upload limit are scaled down and re-encoded to fit automatically (chat drop/paste/attach, Files tab). Off = vanilla.',
   enable(api) {
-    const DEF = { maxRes: 2560, format: 'jpeg', alpha: 'webp', margin: 5, limitMB: 5, chat: true, filesTab: true, notifyDone: true };
+    const DEF = { maxRes: 2560, format: 'jpeg', alpha: 'webp', margin: 5, limitMB: 5, chat: true, filesTab: true, notifyDone: false };
     const cfg = () => ({ ...DEF, ...(api.storage.all() || {}) });
     const CAP = { 'chat-drop': 5e6, 'chat-paste': 5242880 };          // the stock client's own limits for these two routes
     const effLimit = (route, c) => Math.min(c.limitMB * 1e6, CAP[route] ?? Infinity);
@@ -105,7 +105,7 @@ ts6mod.register({
   },
 
   settings(api, box) {
-    const { ui } = api, DEF = { maxRes: 2560, format: 'jpeg', alpha: 'webp', margin: 5, limitMB: 5, chat: true, filesTab: true, notifyDone: true };
+    const { ui } = api, DEF = { maxRes: 2560, format: 'jpeg', alpha: 'webp', margin: 5, limitMB: 5, chat: true, filesTab: true, notifyDone: false };
     const get = k => { const v = api.storage.get(k, undefined); return v === undefined ? DEF[k] : v; };
     const set = (k, v) => api.storage.set(k, v);
     const group = (label, opts, key) => {

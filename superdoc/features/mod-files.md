@@ -37,7 +37,7 @@ chat room here (no account), so they are verified up to the composer's preview c
 | Target size margin | 5 % | result is aimed this far below the limit |
 | Output format | JPEG | JPEG or WebP |
 | Transparent images | WebP | WebP (keeps alpha, quality search), PNG (keeps alpha, lossless: no quality to search, so the resolution shrinks by 15 % steps until it fits), White background (flatten, then the chosen format) |
-| Notify when an image was compressed | on | success toast with old and new size; the "Image not compressed" error toast is always shown |
+| Notify when an image was compressed | off | success toast with old and new size; the "Image not compressed" error toast is always shown |
 
 Metadata: the canvas re-encode **always strips** EXIF, GPS and the colour profile (so there is no switch); orientation is applied to the pixels
 first. Left untouched: animated GIF (not a handled type), animated PNG (`acTL` chunk) and animated WebP (`ANIM`), SVG and other types,
