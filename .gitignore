@@ -1,0 +1,13 @@
+# local-only (real hostnames, test data, machine specifics)
+.claude/local/
+.claude/teamlead/.state/
+.tl-scratch/
+
+# build output
+*.o
+*.a
+*.so
+native/dsp/build/
+native/build/
+native/dsp/test_ts6dsp
+native/dsp/wavproc
