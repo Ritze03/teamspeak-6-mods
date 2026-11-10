@@ -28,6 +28,10 @@
   /* Talk circle: the client row's icon stack carries the class "talking" while the client model's properties.flagTalking is set
    * (computed cssClasses); its CSS then shows the talking arcs in the theme's colour. MARK tells our additions apart from the stock ones. */
   const ICON = '.tsv-server-tree-icon', TALK = 'talking', MARK = 'aware-talk';
+  /* Can this client be talking right now? Per-client model properties (known for other channels too): inputMuted (mic muted),
+   * inputHardware (false = no mic), inputDeactivated (mic deactivated), away. Not outputMuted (speakers off: mic still works, outputOnlyMuted
+   * is that case), not isTalker (talk power grant: false for almost everyone, true talk-power is per channel and not derivable). */
+  const canTalk = m => { const p = m.properties; return !p.inputMuted && p.inputHardware !== false && !p.inputDeactivated && !p.away; };
   const iconOf = row => row.querySelector(ICON);
   const saved = new Map();   // channel -> collapsed flag before setCollapsed(true)
   boot.aware = {
@@ -101,7 +105,7 @@
     otherRows() {
       const h = curHandler(); if (!h) return [];
       const mine = h.ownClient && h.ownClient.channel ? String(h.ownClient.channel.id) : null;
-      return A.tree.rows('client').map(r => r.model).filter(m => m.id !== h.ownClientId && m.channel && String(m.channel.id) !== mine && !m.properties.flagTalking).map(m => ({ schid: h.id, id: m.id }));
+      return A.tree.rows('client').map(r => r.model).filter(m => m.id !== h.ownClientId && m.channel && String(m.channel.id) !== mine && !m.properties.flagTalking && canTalk(m)).map(m => ({ schid: h.id, id: m.id }));
     },
     markTalking(fn) {
       const sync = () => {
@@ -110,7 +114,7 @@
           const ic = iconOf(row); if (!ic) continue;
           const stock = !!model.properties.flagTalking;   // the client knows the real status: never touch it
           let want = false;
-          if (h && !stock && model.id !== h.ownClientId && model.channel && String(model.channel.id) !== mine) { try { want = !!fn(h.id, model.id); } catch (e) { want = false; } }
+          if (h && !stock && canTalk(model) && model.id !== h.ownClientId && model.channel && String(model.channel.id) !== mine) { try { want = !!fn(h.id, model.id); } catch (e) { want = false; } }
           if (want) { if (!ic.classList.contains(MARK) || !ic.classList.contains(TALK)) ic.classList.add(TALK, MARK); }
           else if (ic.classList.contains(MARK)) { ic.classList.remove(MARK); if (!stock) ic.classList.remove(TALK); }
         }
@@ -119,7 +123,7 @@
       };
       const later = () => api.timeout(sync, 80);   // after Vue re-rendered the row (it rewrites the class attribute)
       api.onDom(sync, { debounce: 60 });
-      for (const n of ['talkStatusChanged', 'clientPropertiesUpdated', 'clientMoved', 'clientSelfPropertyUpdated']) api.events.on(n, later);
+      for (const n of ['talkStatusChanged', 'clientPropertiesUpdated', 'clientMoved', 'clientSelfPropertyUpdated']) api.events.on(n, later);   // property events re-sync marks at once (mic mute, away)
       track('aware-talk-marks', () => {
         for (const ic of document.querySelectorAll('.' + MARK)) {
           const row = ic.closest('.ts-server-tree-item-leaf'), r = row && A.tree.rows('client').find(x => x.row === row);

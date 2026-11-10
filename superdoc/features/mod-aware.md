@@ -15,6 +15,7 @@ and requests. Settings are stored per mod (`api.storage`) and edited on the Awar
 | `talk` | on | "Show talking in other channels (from idle time)": talk circles of other channels' users (sends requests) |
 | `idle` | **off** | Idle probe: `idle 12m` labels (sends requests) |
 | `idleInterval` | 5 s | "Seconds between requests", shared by `talk` and `idle`: one request in total per tick |
+| `talkHold` | 1.5 s | "Stay lit for": how long a talk circle stays on after the last activity seen (0.5 to 5 s) |
 | `idleMin` | 60 s | Idle label only for users idle at least this long |
 | `feed` | on | Join/leave feed (top bar button + dropdown list) |
 | `toasts` | off | Also show each feed entry as a notification |
@@ -36,27 +37,45 @@ polled idle time (0 s right after any activity) is the only available proxy.
 - Which rows: client rows rendered right now (the tree is a virtual list, so on-screen rows of expanded channels), not myself, not
   in my channel, and not flagged talking by the client itself. A row the client already shows as talking (own channel, a whisper
   to me) is never touched.
-- When: the last answer's idle time, extrapolated to now (`answer.ms` + age of the answer), is below `LIT` = 1 s + one request
-  interval (`panel/mods/aware/index.js:talkingNow`). A newer answer with a larger idle time turns it off at once. Every other tick
-  a client shown as talking that was asked at least one tick ago is asked again first, so a mark is confirmed or cleared within
-  about one to two intervals.
-- Why this threshold (live finding): idle time on the real server is exact in ms, grows 1:1 and drops to a few hundred ms after
-  activity, so the signal itself works. But with `N` candidate rows each client is asked only every `N` ticks, and the first
-  version (idle < 1 s in the answer, shown for `2 x interval + 1 s`) needed the request to land inside a 1 s window after
-  the activity: observed answers were 632 ms, 399 ms and 1405 ms after short bursts, so a burst was often missed (1405 ms)
-  or lit for about a second only. One interval more in the window means any activity between two looks is seen when the
-  client is asked, at the price of a circle that stays on for up to one interval after someone stopped. Idle time is the only
-  proxy; a longer window would show people who stopped long ago. Not verified live: that voice (not only typing) resets idle
-  time on every server (no talker in another channel was on screen); TS3 servers are expected to count voice as activity.
+- Which clients: only those that can be talking, by client model properties (`panel/core/x-aware.js:canTalk`): `inputMuted` false,
+  `inputHardware` not false (false = no microphone), `inputDeactivated` false and `away` false. Others are neither marked nor asked
+  (no request is spent on them), and a property change (`clientPropertiesUpdated`, `clientSelfPropertyUpdated`) re-syncs the marks
+  at once, so a mark vanishes the moment someone mutes. **Why:** typing, or any other action, resets idle time, so a muted or away user
+  who types would otherwise get a talk circle; they cannot be talking. Speaker-muted (`outputMuted`) clients stay candidates: they can
+  still talk with the microphone on (`outputOnlyMuted` is the separate flag for that case). `isTalker` is not used: it is a talk power
+  grant that is false for almost every client (live: only a few of a server's clients had it), so it would hide nearly everybody.
+- When: `talkingNow` (`panel/mods/aware/index.js`) with `H` = `talkHold` (1.5 s) and `I` = `idleInterval`, for the last answer
+  (idle `a.ms`, age `age`): lit while `a.ms + age < H` (the idle time extrapolated to now is below the hold: the circle goes out `H`
+  after the last activity seen), or while `a.ms < 300 ms and age < I + 0.5 s` (slack: the answer caught activity right now, so the
+  person may still be talking and the circle is kept until the next answer is due). Every answer is evaluated at once: an answer with
+  idle above `H` clears the mark immediately. Marks are re-checked every 300 ms locally.
+- Which client is asked (one request per tick): every candidate has a period in ticks by its last answer, extrapolated: lit `1`,
+  idle < 30 s `2`, idle < 5 min `4`, longer or no answer `12`. Never-asked clients go first, then lit clients that are due (so a
+  lit mark is confirmed or cleared on the very next tick), then the highest (time since asked) / (period) ratio. The budget is never
+  left unused: with nothing due the highest ratio still goes. **Why:** people talk in bursts, so clients active in the last half
+  minute are the likely next talkers and are re-asked often, while someone idle for minutes is asked rarely; no starvation, because
+  a starved client's ratio keeps growing.
+- Timing (I = interval, default 5 s). Detection delay, from the start of talking to the mark: `<=` the client's re-ask time plus the
+  request latency. A recently active client with R such clients on screen: about `max(2, R) * I` (10 s for R <= 2, 15 s for R = 3);
+  a long-idle client that nobody else crowds out: round robin over all N candidates, `N * I` (N = 10: 50 s), longer only while
+  recently active clients take the budget. A lit client: re-asked every tick, so the mark is cleared at the first answer after the
+  stop: `<= I` plus latency (5 s), and when the stop came before the answer, the mark ends `H` after the last activity (1.5 s). Why
+  the slack: with one request per tick the stop of talking is unknowable between answers, so a mark that must not blink during
+  continuous talking has to survive until the next answer; the slack applies only while the last answer showed activity right
+  then (idle below 300 ms), everything else follows the exact extrapolation. Previously the mark stayed `1 s + I` after the last
+  activity and a lit client was re-asked only every other tick (clear within 1 to 2 I).
+- Why this threshold (live finding, still valid for the window logic): idle time on the real server is exact in ms, grows 1:1 and
+  drops to a few hundred ms after activity, so the signal itself works. Answers observed 632 ms, 399 ms and 1405 ms after short
+  bursts, so a request that lands later than about a second after a burst still shows the (extrapolated) activity time, which is why
+  `H` can be small now but the asked-often priority for recent talkers matters. Idle time is the only proxy. Not verified live: that
+  voice (not only typing) resets idle time on every server; TS3 servers are expected to count voice as activity.
 - Mark: the stock class `talking` on the row's icon stack (the stock CSS then shows the talking arcs in the theme's colour, so
   default and extension themes look exactly like a real talker) plus our own marker class `aware-talk`, so only our additions
   are removed again (`panel/core/x-aware.js:markTalking`). Vue rewrites the class attribute only when its own class string
   changes, and recycled rows keep stale classes, so the marks are re-synced on tree DOM changes, on talk / move / property
   events, after every answer and once a second (local only).
-- Limits: a mark shows up to one interval late (or not at all when the client is asked only after its idle passed LIT: with N
-  candidate rows on screen each one is asked about every N intervals) and lasts up to LIT after the activity; it also lights for
-  typing a message or any other action that resets idle time, not only for voice. A muted user who types also lights up (the
-  stock CSS still draws the arcs). With the default 5 s interval and many users on screen it is coarse; a smaller interval (down
+- Limits: a mark shows late (see Timing) or not at all when the client is asked only after its idle passed `talkHold`, and lasts `talkHold` after the activity (or until the next answer, see slack); it also lights for
+  typing a message or any other action that resets idle time, not only for voice. With the default 5 s interval and many users on screen it is coarse; a smaller interval (down
   to 1 s) gives faster circles at a higher request rate. Off-screen rows are never asked for this feature.
 
 ### Idle probe
@@ -68,8 +87,7 @@ ourselves; requests go through the shared timer below. The answer is stored with
 
 ### The request timer (shared)
 One timer (`panel/mods/aware/index.js:poll`) exists while `talk` or `idle` is on; every `idleInterval` seconds it sends exactly
-one `requestConnectionInfo`, to the candidate asked longest ago (never asked first), with the "talking" re-ask above on every
-other tick. Candidates: on-screen other-channel rows (`talk`) plus clients of expanded channels (`idle`). Why one request per
+one `requestConnectionInfo`, chosen by the priority above (never asked, lit and due, then time since asked / period). Candidates: on-screen other-channel rows (`talk`) plus clients of expanded channels (`idle`). Why one request per
 tick overall and not per user: a server with hundreds of visible users must not be flooded (flood protection). Rate before /
 after the talk-circle change: before, 0 requests with the defaults (badges were event-only) and 1 per `idleInterval` with the
 idle probe on; now 1 per `idleInterval` while `talk` (default on) or `idle` is on and a candidate exists, never more (same peak
@@ -88,7 +106,7 @@ Derived from `clientMoved` (see x-file). Limits:
 ## Mechanism (core extension `api.aware`, `panel/core/x-aware.js`)
 Anchors added: `aware.requestInfo` (bridge function exists), `aware.channelCollapsed` (optional; channel model has `treeCollapsed`).
 Anchor `aware.talkCircle` (optional; client row icon stack that takes the stock `talking` class).
-`api.aware`: `schid`, `onActivity`, `expandedClients`, `otherRows` (on-screen rows of other channels without stock talk status),
+`api.aware`: `schid`, `onActivity`, `expandedClients`, `otherRows` (on-screen rows of other channels without stock talk status that `canTalk`),
 `requestInfo` (the only place that issues the request; counted in `boot.aware.stats.requests`), `idleMs`, `answer`, `askedAt`,
 `markTalking(fn)` (talk-circle marks, disposed with the scope), `stats`, `toolbar.rect/contains`, `skin` (popup
 background from the theme's context-menu variables, so default and custom themes match), `cleanup`, `forget`.
