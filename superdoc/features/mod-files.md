@@ -32,7 +32,7 @@ chat room here (no account), so they are verified up to the composer's preview c
 | Setting | Default | Meaning |
 |---|---|---|
 | Chat attachments / Files tab | on / on | which routes the mod handles (only while the mod is on) |
-| Compress images larger than | 5 MB | threshold and size target. Chat drop and paste are additionally capped by the client's own limits, whatever is set |
+| Compress images larger than | 5 MB (range 1-5) | threshold and size target. Values above 5 MB (older stored settings) are clamped to 5 on read. Chat drop and paste are additionally capped by the client's own limits. Why: TS6 does not support uploads above 5 MB, so a higher threshold would let oversized files through |
 | Maximum resolution (long edge) | 2560 px | larger images are scaled down first (aspect ratio kept) |
 | Target size margin | 5 % | result is aimed this far below the limit |
 | Output format | JPEG | JPEG or WebP |

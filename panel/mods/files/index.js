@@ -7,11 +7,11 @@ ts6mod.register({
   icon: 'M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M21 17l-6-6-8 8',
   summary: 'Shrinks large images below the upload limit before they are sent. Other files are untouched.',
   keywords: ['Chat attachments', 'Files tab', 'Compress images larger than', 'Maximum resolution', 'Target size margin', 'Output format', 'JPEG', 'WebP', 'PNG', 'Transparent images'],
-  status: api => { const g = (k, d) => { const v = api.storage.get(k, undefined); return v === undefined ? d : v; }; return 'over ' + g('limitMB', 5) + ' MB, ' + g('maxRes', 2560) + ' px'; },
+  status: api => { const g = (k, d) => { const v = api.storage.get(k, undefined); return v === undefined ? d : v; }; return 'over ' + Math.min(g('limitMB', 5), 5) + ' MB, ' + g('maxRes', 2560) + ' px'; },
   description: 'Images over the upload limit are scaled down and re-encoded to fit automatically (chat drop/paste/attach, Files tab). Off = vanilla.',
   enable(api) {
     const DEF = { maxRes: 2560, format: 'jpeg', alpha: 'webp', margin: 5, limitMB: 5, chat: true, filesTab: true, notifyDone: false };
-    const cfg = () => ({ ...DEF, ...(api.storage.all() || {}) });
+    const cfg = () => { const c = { ...DEF, ...(api.storage.all() || {}) }; c.limitMB = Math.min(Number(c.limitMB) || DEF.limitMB, 5); return c; };   // TS6 takes no uploads over 5 MB
     const CAP = { 'chat-drop': 5e6, 'chat-paste': 5242880 };          // the stock client's own limits for these two routes
     const effLimit = (route, c) => Math.min(c.limitMB * 1e6, CAP[route] ?? Infinity);
     const MIME = { jpeg: 'image/jpeg', webp: 'image/webp', png: 'image/png' };
@@ -106,7 +106,7 @@ ts6mod.register({
 
   settings(api, box) {
     const { ui } = api, DEF = { maxRes: 2560, format: 'jpeg', alpha: 'webp', margin: 5, limitMB: 5, chat: true, filesTab: true, notifyDone: false };
-    const get = k => { const v = api.storage.get(k, undefined); return v === undefined ? DEF[k] : v; };
+    const get = k => { const v = api.storage.get(k, undefined); const r = v === undefined ? DEF[k] : v; return k === 'limitMB' ? Math.min(r, 5) : r; };
     const set = (k, v) => api.storage.set(k, v);
     const group = (label, opts, key) => {
       const pills = opts.map(([v, text]) => ({ v, p: ui.pill({ label: text, onClick: () => { set(key, v); sync(); } }) }));
@@ -123,7 +123,7 @@ ts6mod.register({
         tg('chat', 'Chat attachments', 'Drag and drop, paste and the attach button of chats that allow attachments.'),
         tg('filesTab', 'Files tab', 'Channel and client Files tab: drag and drop, and the upload button.')),
       ui.section('Size',
-        sl('limitMB', 'Compress images larger than', 1, 50, 1, ' MB', 'Chat drop and paste are capped by the client at 5 MB whatever this says.'),
+        sl('limitMB', 'Compress images larger than', 1, 5, 1, ' MB', 'At most 5 MB: TS6 does not support uploads above that.'),
         sl('maxRes', 'Maximum resolution (long edge)', 640, 8192, 64, ' px', 'Larger images are scaled down first.'),
         sl('margin', 'Target size margin', 0, 20, 1, ' %', 'The result is aimed this far below the limit.')),
       ui.section('Format',
