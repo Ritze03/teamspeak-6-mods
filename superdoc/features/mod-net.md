@@ -15,13 +15,21 @@ Built on [ts6-mod-api.md](ts6-mod-api.md); files: `panel/mods/net/` (`index.js`,
     bar's own colour at 13 px (the stock button-label size); the own signal glyph is not shown there (the stock bars sit right next
     to it). It stays visible with the Create Channel button expanded, collapsed, compact or hidden (layout mod), and a narrow pane
     clips it from the end (data rate first, then loss) instead of pushing the stock items out of the bar: at the minimum pane width
-    (220 px) ping and loss still fit with a short ping (measured `0 ms 0.0 %`); a 3-digit ping may drop the loss there.
+    (220 px) the reserved widths may drop the loss (see Constant width).
     Why the bottom bar by default: the user asked for ping/loss to sit next to the stock network stats there and always show.
     Why inside the stock group and not a sibling: the bar's own auto-collapse (see [mod-layout.md](mod-layout.md) Create Channel)
     measures that group, so the label of Create Channel folds away early enough to leave the HUD its room.
   - **Top bar**: `api.topBar.add(element)` next to the mic/speaker buttons (the old placement).
   Shows `<ping> ms`, `<loss> %` and, if enabled, `↓in ↑out` per second (short units). Hidden while not connected. Ping turns warning-coloured over
   the ping limit, loss error-coloured over the loss limit (the limits are the alert limits, also with alerts off).
+- **Constant width** (`style.css`: `.net-ping`, `.net-loss`, `.net-bwv`): every field is an inline-block with a reserved `min-width`
+  and right-aligned tabular digits: ping `7ch` ("9999 ms"), loss `7ch` ("100.0 %"; `fmtPct` always prints one decimal), bandwidth
+  two boxes of `7ch` each (`↓1023k`, `↑1023k`). `fmtBwShort` uses a fixed unit set (B, k, M), one decimal below 100 for k/M, whole numbers
+  otherwise (max 5 characters). The HUD's width therefore only changes when the bandwidth option is toggled, in both positions, and the
+  stock icons beside it never move. Narrow-pane clipping (`maxWidth` from `api.net.bottomBar`) still drops whole fields by wrapping,
+  it does not reflow them; the fixed boxes are wider than a short value, so at the minimum pane width loss (and bandwidth) drop out earlier than before.
+  Why: a changing digit count or unit made the readout and the stock items next to it shift on every sample; reserving the worst case
+  trades a few pixels of empty space for a stable bar.
   In a narrow toolbar the HUD shrinks and the data rate wraps onto a clipped second line instead of spilling under the next pane.
   In the bottom bar it must have `position: relative` like the stock items: the group's background is an absolutely positioned
   `::before` that otherwise paints over static children.

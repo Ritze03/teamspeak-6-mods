@@ -8,8 +8,9 @@
   let live = null;   // the running instance (settings changes are applied through it)
 
   const fmtMs = v => (v == null ? '-' : Math.round(v) + ' ms');
-  const fmtPct = v => (v == null ? '-' : (v < 10 ? v.toFixed(1) : Math.round(v)) + ' %');
-  const fmtBwShort = v => (v == null ? '-' : v >= 1048576 ? (v / 1048576).toFixed(1) + 'M' : v >= 1024 ? (v / 1024).toFixed(1) + 'k' : Math.round(v) + 'B');
+  const fmtPct = v => (v == null ? '-' : v.toFixed(1) + ' %');   // always one decimal: "0.0 %" .. "100.0 %"
+  /* HUD rate: unit from a fixed set (B, k, M), one decimal below 100, whole numbers above, so the text is at most "1023k" (5 chars) */
+  const fmtBwShort = v => { if (v == null) return '-'; const u = v >= 1048576 ? [v / 1048576, 'M'] : v >= 1024 ? [v / 1024, 'k'] : [v, 'B']; return (u[0] < 100 && u[1] !== 'B' ? u[0].toFixed(1) : Math.round(u[0])) + u[1]; };
   const fmtBw = v => (v == null ? '-' : v >= 1048576 ? (v / 1048576).toFixed(1) + ' MB/s' : v >= 1024 ? (v / 1024).toFixed(1) + ' kB/s' : Math.round(v) + ' B/s');
   const stat = vals => { const v = vals.filter(x => x != null); return v.length ? { min: Math.min(...v), max: Math.max(...v), avg: v.reduce((a, b) => a + b, 0) / v.length } : null; };
 
@@ -46,7 +47,7 @@
       const alarm = { ping: { n: 0, on: false, at: 0 }, loss: { n: 0, on: false, at: 0 } };
 
       /* ---- HUD ---- */
-      const elPing = api.el('span', { class: 'net-v net-ping' }, '- ms'), elLoss = api.el('span', { class: 'net-v net-loss' }, '- %'), elBw = api.el('span', { class: 'net-v net-bw' });
+      const elPing = api.el('span', { class: 'net-v net-ping' }, '- ms'), elLoss = api.el('span', { class: 'net-v net-loss' }, '- %'), elBwIn = api.el('span', { class: 'net-bwv' }), elBwOut = api.el('span', { class: 'net-bwv' }), elBw = api.el('span', { class: 'net-v net-bw' }, elBwIn, elBwOut);
       const hud = api.el('div', { class: 'net-hud', role: 'button', tabindex: '0', title: 'Connection quality (click for details); data rate is per second', hidden: true, on: {
         click: () => togglePop(),
         keydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePop(); } },
@@ -99,7 +100,7 @@
         elPing.classList.toggle('warn', !!(last && last.ping != null && last.ping > s.pingMax));
         elLoss.classList.toggle('bad', !!(last && last.loss != null && last.loss > s.lossMax));
         elBw.hidden = !s.bandwidth;
-        elBw.textContent = last && s.bandwidth ? `↓${fmtBwShort(last.bwIn)} ↑${fmtBwShort(last.bwOut)}` : '';
+        elBwIn.textContent = `↓${last ? fmtBwShort(last.bwIn) : '-'}`; elBwOut.textContent = `↑${last ? fmtBwShort(last.bwOut) : '-'}`;
         hud.setAttribute('data-updates', String(updates));
       }
       function line(label, value) { return api.el('div', { class: 'net-row' }, api.el('span', { class: 'net-k' }, label), api.el('span', { class: 'net-val' }, value)); }

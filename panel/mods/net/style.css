@@ -6,6 +6,13 @@
 .net-hud[hidden], .net-pop[hidden], .net-v[hidden] { display: none; }
 .net-hud:hover, .net-hud:focus-visible { background: var(--mods-hover); outline: none; }
 .net-glyph { width: 12px; height: 12px; fill: currentColor; opacity: .8; }
+.net-v { display: inline-block; text-align: right; }
+/* constant width: every field has a reserved width for its worst case (tabular digits), so changing values move nothing; clipping at a
+   narrow pane only drops whole fields (they wrap), never reflows them */
+.net-ping, .net-loss { min-width: 7ch; }   /* "9999 ms", "100.0 %" */
+.net-bw { display: inline-flex; gap: 5px; min-width: 0; }
+.net-bw[hidden] { display: none; }
+.net-bwv { display: inline-block; min-width: 7ch; text-align: right; }   /* "↓1023k" */
 .net-v.warn { color: var(--mods-warn); }
 .net-v.bad { color: var(--mods-error); }
 .net-bw { opacity: .75; }
