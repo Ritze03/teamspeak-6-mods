@@ -34,7 +34,7 @@ struct ts6dsp {
 static float clampf(float v, float lo, float hi) { return !(v >= lo) ? lo : v > hi ? hi : v; }
 
 void ts6dsp_default_params(ts6dsp_params *p) {
-    ts6dsp_params d = { 1, -20.f, 12.f, -50.f, 0, -24.f, 3.f, 6.f, 5.f, 150.f, 4.f, 5.f, -1.f };
+    ts6dsp_params d = { 1, -32.f, 12.f, -60.f, 0, -24.f, 1.f, 6.f, 5.f, 150.f, 4.f, 5.f, -12.f };
     *p = d;
 }
 

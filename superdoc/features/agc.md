@@ -22,8 +22,8 @@ Needs Node >= 22 and a C compiler (builds `native/libts6mod.so` on first start).
 
 | mode (`mode`) | where it runs | notes |
 |---|---|---|
-| `whole` (default) | `pa_stream_write` of the playback stream: one chain on everything mixed (voices + sounds) | works on any client; one loud speaker lowers the others |
-| `per_speaker` | inline hook on each sender's decoded PCM before the mix ([per-speaker-hook.md](per-speaker-hook.md)) | one chain per speaker, per-user overrides work, all speakers share one `lookahead_ms` delay; the whole-stream path then passes through |
+| `whole` | `pa_stream_write` of the playback stream: one chain on everything mixed (voices + sounds) | works on any client; one loud speaker lowers the others |
+| `per_speaker` (default) | inline hook on each sender's decoded PCM before the mix ([per-speaker-hook.md](per-speaker-hook.md)) | one chain per speaker, per-user overrides work, all speakers share one `lookahead_ms` delay; the whole-stream path then passes through |
 
 **Ceiling in per-speaker mode:** the ceiling is applied to each speaker *before* the mix, so simultaneous speakers can sum above it
 (measured: ceiling -6 dB, two talkers at once -> mixed peak -4.9 dBFS; the same run in whole-stream mode peaked at -6.0). Whole-stream mode
@@ -135,7 +135,7 @@ mode/preset/parameter/meter boxes are dimmed (still editable).
 
 | | target | max boost | gate | compressor | threshold | ratio | knee | attack | release | make-up | lookahead | ceiling |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Voice** (= DSP defaults) | -20 dB | 12 dB | -50 dB | off | -24 dB | 3:1 | 6 dB | 5 ms | 150 ms | 4 dB | 5 ms | -1 dB |
+| **Voice** (= DSP defaults) | -32 dB | 12 dB | -60 dB | off | -24 dB | 1:1 | 6 dB | 5 ms | 150 ms | 4 dB | 5 ms | -12 dB |
 | **Music** | -18 dB | 6 dB | -60 dB | off | -18 dB | 2:1 | 12 dB | 20 ms | 400 ms | 2 dB | 5 ms | -1 dB |
 | **Quiet night** | -26 dB | 18 dB | -55 dB | off | -30 dB | 6:1 | 6 dB | 2 ms | 120 ms | 0 dB | 8 ms | -6 dB |
 

@@ -17,4 +17,4 @@ for name, (lo, hi) in (('phase1 AGC off', (0.5, 3.8)), ('phase3 AGC off (after d
 x, r = seg(5.0, 7.6)
 db = lambda v: 20*np.log10(max(v, 1) / 32768.0)
 pk = np.abs(x).max()
-print('phase2 AGC on : input peak %.2f dBFS -> output peak %.2f dBFS, ceiling -1.00: %s' % (db(np.abs(r).max()), db(pk), 'PASS' if db(pk) <= -0.99 else 'FAIL'))
+print('phase2 AGC on : input peak %.2f dBFS -> output peak %.2f dBFS, ceiling -12.00: %s' % (db(np.abs(r).max()), db(pk), 'PASS' if db(pk) <= -11.99 else 'FAIL'))

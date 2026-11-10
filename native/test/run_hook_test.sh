@@ -12,7 +12,7 @@ pw-record -P '{ stream.capture.sink=true }' --target ts6test --format s16 "$work
 sleep 1
 XDG_CONFIG_HOME="$work/cfg" XDG_STATE_HOME="$work/state" TS6MOD_EXE="$work/harness" TS6MOD_PORT=$port \
   LD_PRELOAD="$native/libts6mod.so" "$work/harness" ts6test 14 & h=$!
-sleep 4.2;  curl -s -X POST -d '{"enabled":true}' $api/config >/dev/null; echo "t=4: enabled"; sleep 0.2
+sleep 4.2;  curl -s -X POST -d '{"mode":"whole","enabled":true}' $api/config >/dev/null; echo "t=4: enabled"; sleep 0.2
 curl -s $api/meters >/dev/null; sleep 3.6
 curl -s $api/status; echo; curl -s $api/meters; echo
 curl -s -X POST -d '{"enabled":false}' $api/config >/dev/null; echo "t=8: disabled"

@@ -11,20 +11,20 @@ extern "C" {
 typedef struct {
     int   enabled;       /* 0 = bypass (still delayed by latency, crossfaded in 10 ms), 1 = process */
     /* leveler */
-    float target_db;     /* target RMS, -40..0, default -20 */
+    float target_db;     /* target RMS, -40..0, default -32 */
     float max_gain_db;   /* max boost, 0..24, default 12 */
-    float gate_db;       /* input RMS below this: leveler holds, -90..-20, default -50 */
+    float gate_db;       /* input RMS below this: leveler holds, -90..-20, default -60 */
     /* compressor */
     int   comp_enabled;  /* 0 = stage bypassed: no reduction and no make-up, default 0 (see README) */
     float threshold_db;  /* -60..0, default -24 */
-    float ratio;         /* 1..20, default 3 (1 = off) */
+    float ratio;         /* 1..20, default 1 (1 = off) */
     float knee_db;       /* 0..24, default 6 */
     float attack_ms;     /* 0.1..200, default 5 */
     float release_ms;    /* 5..2000, default 150 */
     float makeup_db;     /* -12..24, default 4 */
     /* limiter */
     float lookahead_ms;  /* 0..20, default 5. Fixes the latency: only read at create (see README) */
-    float ceiling_db;    /* -24..0, default -1. |out| <= this, sample peak */
+    float ceiling_db;    /* -24..0, default -12. |out| <= this, sample peak */
 } ts6dsp_params;
 
 typedef struct ts6dsp ts6dsp;

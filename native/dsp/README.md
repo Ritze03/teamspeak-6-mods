@@ -16,17 +16,17 @@ gate threshold ratio knee attack release makeup lookahead ceiling`. Output is la
 | field | range | default | meaning |
 |---|---|---|---|
 | enabled | 0/1 | 1 | 0 = bypass (delayed by the same latency, 10 ms crossfade) |
-| target_db | -40..0 | -20 | leveler target RMS |
+| target_db | -40..0 | -32 | leveler target RMS |
 | max_gain_db | 0..24 | 12 | max leveler boost (cut is fixed at -12) |
-| gate_db | -90..-20 | -50 | input RMS below this: leveler holds, silence/noise is not pumped up |
+| gate_db | -90..-20 | -60 | input RMS below this: leveler holds, silence/noise is not pumped up |
 | comp_enabled | 0/1 | 0 | compressor stage on/off; off = no gain reduction and no make-up (ramped out, gain reduction decays with the release time) |
 | threshold_db | -60..0 | -24 | compressor threshold (peak level) |
-| ratio | 1..20 | 3 | 1 = no reduction (but make-up still applies; use comp_enabled to bypass) |
+| ratio | 1..20 | 1 | 1 = no reduction (but make-up still applies; use comp_enabled to bypass) |
 | knee_db | 0..24 | 6 | soft knee width |
 | attack_ms / release_ms | 0.1..200 / 5..2000 | 5 / 150 | |
 | makeup_db | -12..24 | 4 | compressor make-up; only applied while comp_enabled |
 | lookahead_ms | 0..20 | 5 | limiter lookahead = latency; read **only at create** |
-| ceiling_db | -24..0 | -1 | output sample peak never exceeds this |
+| ceiling_db | -24..0 | -12 | output sample peak never exceeds this |
 
 `ts6dsp_set_params` may be called from a control thread while `process` runs; it is applied at the
 next block boundary. Attack/release/threshold/ratio/knee/target/gate changes are click-free (the

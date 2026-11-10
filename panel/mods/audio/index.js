@@ -24,7 +24,7 @@
   const values = (...v) => Object.assign(Object.fromEntries(KEYS.map((k, i) => [k, v[i]])), { comp_enabled: false });
   /*                              target maxG gate thr  ratio knee att  rel  makeup look ceil */
   const PRESETS = {
-    voice: { title: 'Voice', blurb: 'Evens out speakers and tames peaks; the default everyday setting.', values: values(-20, 12, -50, -24, 3, 6, 5, 150, 4, 5, -1) },
+    voice: { title: 'Voice', blurb: 'Evens out speakers and tames peaks; the default everyday setting.', values: values(-32, 12, -60, -24, 1, 6, 5, 150, 4, 5, -12) },
     music: { title: 'Music', blurb: 'Light touch for music bots: keeps the dynamics, only lifts quiet parts a little and stops peaks.', values: values(-18, 6, -60, -18, 2, 12, 20, 400, 2, 5, -1) },
     quiet: { title: 'Quiet night', blurb: 'Low overall volume with strong peak control: whispers stay audible, shouting never gets loud.', values: values(-26, 18, -55, -30, 6, 6, 2, 120, 0, 8, -6) },
   };

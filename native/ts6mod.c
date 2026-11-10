@@ -93,7 +93,7 @@ static void init_paths(void) {
 }
 
 /* ---------- config ---------- */
-/* mode: "whole" = whole-stream DSP at pa_stream_write (default); "per_speaker" = per-sender hook
+/* mode: "whole" = whole-stream DSP at pa_stream_write; "per_speaker" (default) = per-sender hook
  * (native/ts6hook.c), whole-stream path then passes through. `enabled` is the master switch. */
 typedef struct { int enabled; char mode[16]; ts6dsp_params p; char preset[32]; float strength; } cfg_t;
 static cfg_t g_cfg;
@@ -104,7 +104,7 @@ static int mode_is_per_speaker(void) { return !strcmp(g_cfg.mode, "per_speaker")
 static void cfg_default(cfg_t *c) {
     memset(c, 0, sizeof *c);
     ts6dsp_default_params(&c->p);
-    snprintf(c->mode, sizeof c->mode, "whole");
+    snprintf(c->mode, sizeof c->mode, "per_speaker");
     snprintf(c->preset, sizeof c->preset, "balanced"); c->strength = 50.f;
 }
 
