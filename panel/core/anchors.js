@@ -156,10 +156,22 @@
       mounted() { page.mount(this.$refs.host); }, activated() { page.mount(this.$refs.host); },
       deactivated() { page.unmount(this.$refs.host); }, beforeDestroy() { page.unmount(this.$refs.host); },
     });
-    const desc = { component: 'ts-settings-view', keepAlive: true, renderKey: 'settings', image: page.icon || 'settings-addons', key: page.key, title: page.title, extraProps: { component: () => Promise.resolve(ctor) } };
+    const desc = { component: 'ts-settings-view', keepAlive: true, renderKey: 'settings', image: typeof page.icon === 'string' && page.icon || 'settings-addons', key: page.key, title: page.title, extraProps: { component: () => Promise.resolve(ctor) } };
     const i0 = modes.findIndex(m => m.key === page.key); if (i0 >= 0) modes.splice(i0, 1);
     modes.push(desc); rebuildSettingsNav();
-    return () => { const i = modes.indexOf(desc); if (i >= 0) modes.splice(i, 1); rebuildSettingsNav(); };
+    // icon: {src} (image URL) instead of a stock icon name. The nav only draws names from its own icon set, so the stock glyph is
+    // swapped for an <img> (same 22px box) whenever the nav renders; the observer exists only while the page is registered
+    const src = page.icon && page.icon.src, mo = src && new MutationObserver(() => {
+      for (const t of $$('.tsv-settings-categories .tsv-item-text')) {
+        if (t.textContent.trim() !== page.title) continue;
+        const svg = t.parentElement.querySelector('svg.tsv-icon'); if (!svg) continue;
+        const img = document.createElement('img'); img.src = src; img.alt = ''; img.className = svg.getAttribute('class') + ' ts6mods-nav-icon';
+        img.style.cssText = 'width:22px;height:22px;flex:none;border-radius:5px;object-fit:contain';
+        svg.replaceWith(img);
+      }
+    });
+    if (mo) mo.observe(document.body, { childList: true, subtree: true });
+    return () => { if (mo) mo.disconnect(); const i = modes.indexOf(desc); if (i >= 0) modes.splice(i, 1); rebuildSettingsNav(); };
   }
   const settingsModeKeys = () => get('app.settingsModes').map(m => m.key);
 

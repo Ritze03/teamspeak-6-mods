@@ -32,6 +32,9 @@ export function listMods({ examples = false, only = null, dir = panelDir } = {})
   return out;
 }
 
+/* The project icon (repo-root icon.svg, the single master, copied byte for byte) as a data: URL for the Mods nav entry. */
+const iconUrl = () => 'data:image/svg+xml;base64,' + readFileSync(join(panelDir, '..', 'icon.svg')).toString('base64');
+
 const loadCalls = mods => mods.map(m => `core.load(${JSON.stringify(m.id)}, ${JSON.stringify(m.css)}, function (ts6mod) {\n${m.js}\n}, ${JSON.stringify(m.source)});`).join('\n');
 
 /* The full script: core + mods. replace=true unloads an already injected core first (dev hot reload). */
@@ -40,7 +43,7 @@ export function buildBundle({ examples = false, replace = false, only = null, di
   const css = readdirSync(join(dir, 'core')).filter(n => n.endsWith('.css')).sort().map(n => read(join(dir, 'core', n))).join('\n');
   return `(function () {
   if (window.__ts6mod) { if (!${replace}) return; window.__ts6mod.unload(); }
-  window.__ts6modBoot = { coreCss: ${JSON.stringify(css)} };
+  window.__ts6modBoot = { coreCss: ${JSON.stringify(css)}, iconUrl: ${JSON.stringify(iconUrl())} };
 ${core}
   const core = window.__ts6mod;
 ${loadCalls(listMods({ examples, only, dir }))}

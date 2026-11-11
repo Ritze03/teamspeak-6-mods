@@ -10,7 +10,7 @@ underlying mechanics in [ts6-ui-extension-points.md](ts6-ui-extension-points.md)
 - `panel/core/`: framework (`anchors.js`, `core.js`, `slots.js`, `page.js`, `core.css`). The Mods page is
   `panel/core/page.js` (`boot.page.install`); it is a Settings category pushed into the settings mode list by
   `anchors.js:addSettingsPage`.
-- `panel/mods/audio/`: the AGC page, per-user audio popover and the two stock TeamSpeak playback AGC toggles (see below).
+- `panel/mods/audio/`: the AGC page, per-user audio popover and the AGC dropdown (see below).
 - `panel/mods/dashboard/`: the Dashboard button.
 - Injected by `tools/cdp/mods-inject.mjs` (bundle built by `tools/cdp/bundle.mjs`): one CDP socket stays open,
   `Page.addScriptToEvaluateOnNewDocument` + `Runtime.evaluate` (never `Page.reload`), plus the binding `ts6modNative` through
@@ -74,12 +74,11 @@ section of [testing-guide.md](testing-guide.md).
 
 ## Audio mod
 
-`panel/mods/audio/` (+ `panel/core/x-audio.js`): the AGC page (master switch, whole-stream / per-speaker mode, every DSP parameter,
-built-in and own presets, live meters, per-speaker list, per-user list), the per-user "Audio..." popover and the two stock TeamSpeak
-playback AGC toggles. Everything is on the mod's own page (four tabs, see [agc.md](agc.md)); polling (meters 120 ms, status 2 s) runs in the settings scope, i.e.
-only while its page is shown and the mod is on. Details, presets and the control API: [agc.md](agc.md).
-**The mod switch also switches the native AGC**: off = native `enabled:false` (persisted by the native module), on = the user's own master
-choice is restored (vanilla rule, see [agc.md](agc.md)).
+`panel/mods/audio/` (+ `panel/core/x-audio.js`): the AGC page (an "AGC" dropdown: TS6Mods / Vanilla / Vanilla (Experimental), whole-stream / per-speaker mode,
+every DSP parameter, built-in and own presets, live meters, per-speaker and per-user lists) and the per-user "Audio..." popover. Everything is on the
+mod's own page (four tabs); polling (meters 120 ms, status 2 s) runs in the settings scope, i.e. only while its page is shown and the mod is on.
+The dropdown replaces the former master switch and the two stock playback AGC toggles; the mod switch off restores the user's stock values (vanilla rule).
+Details, presets and the control API: [agc.md](agc.md#the-agc-dropdown-and-the-stock-playback-agc).
 
 ## Dashboard button
 
