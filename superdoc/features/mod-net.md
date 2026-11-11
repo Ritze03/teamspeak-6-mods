@@ -121,3 +121,8 @@ width, with each Create Channel style.
 - Top bar: at narrow window widths the HUD uses the space of the toolbar; turn off bandwidth to shrink it.
 - Bottom bar at a narrow pane: when the readout is clipped, the HUD box keeps its maximum width, so a small empty gap can remain
   before the stock icons.
+- Frozen readout (fixed): the client sometimes never calls the `requestConnectionInfo` callback back (seen on a long-running client after
+  reconnect/hot reloads: one request outstanding, HUD stuck on its last values, empty graph). `tick` skips while a request is in flight, so
+  one lost callback stopped all updates. Why: `api.net.poll` (`panel/core/x-net.js`) now gives up after 5 s (the lost callback is dropped),
+  and the HUD shows `- ms` once the newest sample is older than 15 s (`STALE_MS`) and prunes old samples every tick, instead of showing
+  stale numbers as current. Verified by swallowing one callback on a test client: updates resume after the 5 s deadline.
