@@ -1,7 +1,7 @@
 /* Layout mod: the tab strip in the title bar (pinned current-channel tab, chat tabs, drop line while reordering). Tokens only
    (--mods-*); placement is set by index.js from the chat pane / title bar geometry. */
 .lay-strip { position: fixed; z-index: 30; display: flex; align-items: center; gap: 4px; box-sizing: border-box; overflow-x: auto; overflow-y: hidden;
-  scrollbar-width: none; -webkit-app-region: no-drag; pointer-events: none; color: var(--mods-fg); font-size: 13px; }
+  scrollbar-width: none; -webkit-app-region: drag; pointer-events: none; color: var(--mods-fg); font-size: 13px; }
 .lay-strip::-webkit-scrollbar { display: none; }
 .lay-strip.empty { display: none; }
 .lay-tab { pointer-events: auto; flex: 0 1 180px; min-width: 70px; max-width: 220px; height: 100%; box-sizing: border-box; display: flex; align-items: center; gap: 6px;

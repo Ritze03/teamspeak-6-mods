@@ -94,6 +94,7 @@ Why: a tab strip as an overlay computed from rects (instead of injecting into th
 panes (the toolbar sits in the tree pane's bar, the window buttons in the chat pane's) and the strip has to line up with the chat
 pane's content, not with a bar element. Why `max(chat start, toolbar end + 12)`: with a narrow tree pane the toolbar reaches past
 the chat start; overlapping the toolbar (or the net mod's top-bar readout inside it) is worse than a misaligned strip. Why collapse the sidebar: the user's spec (tabs replace the wide chat list).
+Why the strip is `-webkit-app-region: drag` and only the tabs `no-drag`: the stock title bar is a CSS drag region (`drag` on the bar, `no-drag` on its buttons); a `no-drag` strip filling to the bar's right limit made the empty space right of the last tab undraggable. The strip is a fixed overlay, so it must stay a drag region itself and carve out just the tabs.
 Why the `layout` density restores via re-measure: the stock cache cannot be refreshed, so heights are pushed into the component.
 
 ## Test procedure
