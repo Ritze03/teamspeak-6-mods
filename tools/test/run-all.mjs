@@ -25,7 +25,7 @@
 //                             isolated = not the user's real ~/.config, i.e. a TS6MOD_PROFILE_DIR client. Never write a real profile.
 //   ctx.skip(part, reason)    print a SKIP line for a part of the test that cannot run on this client (does not fail the test)
 // Isolated clients (never the real profile) are muted (mic + speakers) for the whole run and their window is parked on the hidden Hyprland
-// workspace: tools/test/mute-test-clients.mjs, tools/rig/hide-client.sh (user rule, superdoc/features/test-rig.md "Audio isolation").
+// workspace: tools/test/mute-test-clients.mjs, tools/rig/headless-sway.sh (user rule, superdoc/features/test-rig.md "Audio isolation").
 // Side effects of the run itself are put back at the end: mod switches (in memory), the persisted mods blob, route, window size
 // override, clipboard text.
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -79,14 +79,13 @@ console.log(`        client: CDP ${cdpPort}, ${profile.isolated ? 'isolated prof
 
 /* user rule: a test client never uses the user's real microphone or speakers (the user talks on TeamSpeak while tests run).
  * Isolated clients are throw-away: mute capture + playback (app toggles AND the audio streams, re-applied every 500 ms so a test that
- * reconnects a client stays muted; nothing is restored) and park the window on the hidden Hyprland workspace. Covers the second client
+ * reconnects a client stays muted; nothing is restored) (the window is off-desktop because the client runs in the headless Sway: tools/rig/headless-sway.sh). Covers the second client
  * given by AWARE_P2_CDP / TS6MOD_CHAT_CDP2 too. The user's real client is never muted. Why/how: superdoc/features/test-rig.md. */
 const secondPorts = [process.env.AWARE_P2_CDP, process.env.TS6MOD_CHAT_CDP2].filter(Boolean).map(Number).filter((p, i, l) => p && p !== cdpPort && l.indexOf(p) === i);
 let stopMuting = () => {};
 if (profile.isolated) {
   const ports = [cdpPort, ...secondPorts];
   stopMuting = await startMuting({ ports, log: t => console.log('        ' + t) });
-  spawnSync(join(root, 'tools', 'rig', 'hide-client.sh'), ports.map(String), { stdio: 'ignore' });   // fallback when no windowrule moves it
   const st = await ev(`(() => { const h = (__ts6mod.anchors.get('app.controller').connections || []).map(c => c.serverConnectionHandler).filter(Boolean)[0]; const me = h && h.ownClient; return me ? [!!me.properties.inputMuted, !!me.properties.outputMuted] : null; })()`).catch(() => null);
   console.log(`        audio isolation: ports ${ports.join(', ')} muted (own mic/speaker state [input, output] = ${JSON.stringify(st)}${st ? '' : ': not connected yet, re-applied on connect'})`);
 }

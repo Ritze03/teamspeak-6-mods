@@ -57,7 +57,7 @@ Dev loop: `tools/cdp/mods-reload.mjs` swaps the panel code into the running clie
 | `tools/cdp/bundle.mjs` | builds the page script from `panel/` (core files, then mods, examples only on request) |
 | `tools/cdp/mods-reload.mjs` | hot-swaps panel code into the running client |
 | `tools/test/run-all.mjs`, `core-tests.mjs` | all checks against a running modded client (lint, anchors, sigscan, mod tests, core/slot tests, vanilla) |
-| `tools/rig/` | local audio test rig (null sinks, test WAVs) ([features/test-rig.md](../features/test-rig.md)) |
+| `tools/rig/` | local audio test rig (null sinks, test WAVs, headless Sway for test windows) ([features/test-rig.md](../features/test-rig.md)) |
 | `panel/core/` | framework: `anchors.js`, `core.js`, `slots.js`, `page.js` (Mods page), `core.css`, extension files `x-<mod>.js` |
 | `panel/mods/<name>/` | one mod each: `index.js`, optional `style.css`, `test.mjs` (`audio aware chat dashboard files layout net power theme`) |
 | `panel/examples/ext-provider`, `ext-consumer` | sample plugins, injected only with `TS6MOD_EXAMPLES=1` / `--examples` |

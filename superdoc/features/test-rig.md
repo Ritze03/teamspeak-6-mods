@@ -33,24 +33,31 @@ still talk at normal TeamSpeak speed without hearing myself. Push-to-talk or not
   `(stream muted)` shows the stream-level mute; `--allow-prefix P` changes the allowed device prefix; `--help` prints usage). By hand: `pactl list short source-outputs` / `sink-inputs` (match the client's pid in
   `pactl list source-outputs`); no test client may sit on a real device unmuted.
 
-## Hidden test windows
+## Headless Sway (test windows never touch the desktop)
 
-Test clients are real windows. On Hyprland they are kept off the user's desktop on the special workspace `special:ts6test`:
+**Never Hyprland headless: it crashes the main session (user rule).** No `Hyprland --headless`, no `hyprctl output create headless`,
+nothing that creates outputs in the user's Hyprland. Test clients run in their own headless **Sway** instead:
+`tools/rig/headless-sway.sh`.
 
-- **Window rule (preferred, from the first frame).** The window class cannot be changed: `--class=` / `--wm-class` have no effect
-  (the client sets its own WM_CLASS; `hyprctl clients -j` still shows `TeamSpeak`). But test clients run with
-  `--ozone-platform=x11` (XWayland) and have class `TeamSpeak`, while the user's real client runs native Wayland with class
-  `com.teamspeak.teamspeak`, so a rule on `class ^TeamSpeak$` + `xwayland` never catches the real client. Lua config (Hyprland 0.56):
-  `hl.window_rule({ match = { class = "^TeamSpeak$", xwayland = true }, workspace = "special:ts6test silent" })`
-  (legacy hyprlang form: `windowrule = match:class ^TeamSpeak$, match:xwayland 1, workspace special:ts6test silent`).
-  Always launch test clients with `--ozone-platform=x11` (already in the launch flags below), or the rule does not apply.
-- **Fallback without the rule**: `tools/rig/hide-client.sh <cdp-port>...` waits for the window and moves it silently
-  (`hl.dsp.window.move`, address-based; no-op without Hyprland, `TS6TEST_WORKSPACE` overrides the name). `rig up` and
-  `run-all` (isolated clients) call it. Without the rule the window shows on the desktop briefly (a few hundred ms to the
-  next 0.5 s poll) before it moves.
-- Why a rule and not `hyprctl dispatch exec "[workspace ...]"`: that makes Hyprland the parent of the client, outside
-  `claude.slice`; clients must start through `ccorral --`.
-- Hidden windows still render for the tests (the four launch flags keep the page alive); run-all passes with the clients parked.
+- `up`: idempotent; starts sway through `ccorral --` with `WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman`
+  (software rendering, does not use the GPU; `TS6_SWAY_RENDERER=gles2` overrides), config generated in `$HOME/tmp/ts6-sway/config`
+  (one output `HEADLESS-1` 1920x1080, `xwayland force`, no bar), `SWAYSOCK=$HOME/tmp/ts6-sway/sway.sock`, log `sway.log` next to it.
+  The user's `DISPLAY`, `WAYLAND_DISPLAY` and `HYPRLAND_INSTANCE_SIGNATURE` are removed from sway's environment, so it never nests.
+- `env`: prints the exports (`WAYLAND_DISPLAY`, `SWAYSOCK`, `DISPLAY` of sway's Xwayland): `eval "$(tools/rig/headless-sway.sh env)"`.
+- `run -- CMD...`: runs CMD with that env (starts sway first if needed). Env vars set by the caller (`HOME`, `XDG_*`,
+  `TS6MOD_*`) pass through. Modded client: `TS6MOD_PROFILE_DIR=... TS6MOD_CDP_PORT=... TS6MOD_PORT=... ccorral -- tools/rig/headless-sway.sh run -- ./launcher/ts6-mod`.
+- `shot [file.png]`: `grim` screenshot of the headless output (default `$HOME/tmp/ts6-sway/shot.png`); a visual check without
+  the account-wall problems of real windows. `status`, `down` (stops sway by the pid that owns the socket, never by pattern).
+- `rig up` starts every client through `headless-sway.sh run --` by default (`RIG_NO_SWAY=1` opts out: window on the desktop);
+  `rig down` stops sway. `run-all` assumes the client under test was started that way.
+- Clients keep `--ozone-platform=x11` (`CLIENT_FLAGS`): they are XWayland windows of sway (class `TeamSpeak` in
+  `swaymsg -t get_tree`), and never show up in `hyprctl clients`. Check: `SWAYSOCK=$HOME/tmp/ts6-sway/sway.sock swaymsg -t get_tree`.
+- Why sway and not Hyprland special workspaces (the old way, `hide-client.sh`, removed): that needed a user window rule, flashed the
+  window on the desktop for a moment and still shared the desktop's focus; a separate compositor has no overlap at all.
+- Why `run` resolves the state dir from the passwd home, not `$HOME`: test clients run with `HOME` pointed into their profile.
+- Why `WAYLAND_DISPLAY` is read back from sway (`up` records `DISPLAY` and `WAYLAND_DISPLAY` of sway's own children): sway
+  names its socket itself (`wayland-N`) and ignores a requested name.
+- The windows still render (the four launch flags keep the page alive); audio is session-wide and unaffected: keep the mute rules above.
 
 ## Why (decision D13)
 
