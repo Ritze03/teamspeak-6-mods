@@ -332,7 +332,7 @@
   };
 
   boot.page = {
-    install() { undoPage = A.settings.addPage({ key: KEY, title: 'Mods', icon: 'settings-addons', mount, unmount }); },
+    install() { undoPage = A.settings.addPage({ key: KEY, title: 'Mods', icon: boot.iconUrl ? { src: boot.iconUrl } : 'settings-addons', mount, unmount }); },
     uninstall() { unmount(); if (undoPage) { undoPage(); undoPage = null; } },
   };
 })(window.__ts6modBoot);
