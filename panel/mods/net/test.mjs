@@ -20,7 +20,7 @@ export default async function (ctx) {
     ctx.equal(await reqs(), a, 'no requests without a connection');
   } else {
     // live numbers that update
-    await ctx.waitFor(`/\\d+ ms/.test(document.querySelector('${HUD}').textContent) && /\\d+(\\.\\d)? %/.test(document.querySelector('${HUD}').textContent)`, 'HUD shows ping (ms) and loss (%)');
+    await ctx.waitFor(`/\\d+ ms/.test(document.querySelector('${HUD}').textContent) && /↓\\d+\\.\\d%.*↑\\d+\\.\\d%/.test(document.querySelector('${HUD}').textContent)`, 'HUD shows ping (ms) and loss (%)');
     const u1 = +(await ctx.eval(`document.querySelector('${HUD}').getAttribute('data-updates')`));
     await ctx.waitFor(`+document.querySelector('${HUD}').getAttribute('data-updates') > ${u1}`, 'HUD updates over time', 6000);
     ctx.assert(/↓/.test(await ctx.eval(`document.querySelector('${HUD}').textContent`)), 'bandwidth shown by default');

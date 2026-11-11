@@ -1,4 +1,4 @@
-/* Net mod: connection quality HUD in the server pane's bottom bar next to the client's own connection status, or in the top bar (ping, packet loss, optional bandwidth), a popover with a 60 s sparkline,
+/* Net mod: connection quality HUD in the server pane's bottom bar next to the client's own connection status, or in the top bar (ping, packet loss down/up, optional bandwidth), a popover with a 60 s sparkline,
  * stats, the channel codec and a "Copy diagnostics" button, optional threshold alerts. Data comes from api.net (panel/core/x-net.js).
  * Polls only while the mod is on AND a connection is established. Docs: superdoc/features/mod-net.md. */
 (() => {
@@ -9,6 +9,7 @@
 
   const fmtMs = v => (v == null ? '-' : Math.round(v) + ' ms');
   const fmtPct = v => (v == null ? '-' : v.toFixed(1) + ' %');   // always one decimal: "0.0 %" .. "100.0 %"
+  const fmtPctShort = v => (v == null ? '–' : v.toFixed(1) + '%');   // HUD loss per direction: "0.0%" (one decimal, no space, to fit the bottom bar)
   /* HUD rate: unit from a fixed set (B, k, M), one decimal below 100, whole numbers above, so the text is at most "1023k" (5 chars) */
   const fmtBwShort = v => { if (v == null) return '-'; const u = v >= 1048576 ? [v / 1048576, 'M'] : v >= 1024 ? [v / 1024, 'k'] : [v, 'B']; return (u[0] < 100 && u[1] !== 'B' ? u[0].toFixed(1) : Math.round(u[0])) + u[1]; };
   const fmtBw = v => (v == null ? '-' : v >= 1048576 ? (v / 1048576).toFixed(1) + ' MB/s' : v >= 1024 ? (v / 1024).toFixed(1) + ' kB/s' : Math.round(v) + ' B/s');
@@ -47,7 +48,7 @@
       const alarm = { ping: { n: 0, on: false, at: 0 }, loss: { n: 0, on: false, at: 0 } };
 
       /* ---- HUD ---- */
-      const elPing = api.el('span', { class: 'net-v net-ping' }, '- ms'), elLoss = api.el('span', { class: 'net-v net-loss' }, '- %'), elBwIn = api.el('span', { class: 'net-bwv' }), elBwOut = api.el('span', { class: 'net-bwv' }), elBw = api.el('span', { class: 'net-v net-bw' }, elBwIn, elBwOut);
+      const elPing = api.el('span', { class: 'net-v net-ping' }, '- ms'), elLossD = api.el('span', { class: 'net-lossv' }), elLossU = api.el('span', { class: 'net-lossv' }), elLoss = api.el('span', { class: 'net-v net-loss' }, elLossD, elLossU), elBwIn = api.el('span', { class: 'net-bwv' }), elBwOut = api.el('span', { class: 'net-bwv' }), elBw = api.el('span', { class: 'net-v net-bw' }, elBwIn, elBwOut);
       const hud = api.el('div', { class: 'net-hud', role: 'button', tabindex: '0', title: 'Connection quality (click for details); data rate is per second', hidden: true, on: {
         click: () => togglePop(),
         keydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePop(); } },
@@ -96,9 +97,10 @@
         hud.hidden = !api.net.connected();
         if (hud.hidden) { if (popOpen) closePop(); return; }
         elPing.textContent = last ? fmtMs(last.ping) : '- ms';
-        elLoss.textContent = last ? fmtPct(last.loss) : '- %';
+        elLossD.textContent = `↓${last ? fmtPctShort(last.lossDown) : '–'}`; elLossU.textContent = `↑${last ? fmtPctShort(last.lossUp) : '–'}`;
         elPing.classList.toggle('warn', !!(last && last.ping != null && last.ping > s.pingMax));
-        elLoss.classList.toggle('bad', !!(last && last.loss != null && last.loss > s.lossMax));
+        elLossD.classList.toggle('bad', !!(last && last.lossDown != null && last.lossDown > s.lossMax));
+        elLossU.classList.toggle('bad', !!(last && last.lossUp != null && last.lossUp > s.lossMax));
         elBw.hidden = !s.bandwidth;
         elBwIn.textContent = `↓${last ? fmtBwShort(last.bwIn) : '-'}`; elBwOut.textContent = `↑${last ? fmtBwShort(last.bwOut) : '-'}`;
         hud.setAttribute('data-updates', String(updates));
@@ -123,7 +125,7 @@
         rows.replaceChildren(
           line('Ping', last ? `${fmtMs(last.ping)}${last.jitter != null ? ` (jitter ${last.jitter.toFixed(1)} ms)` : ''}` : '-'),
           line('Ping min / avg / max', ps ? `${fmtMs(ps.min)} / ${fmtMs(ps.avg)} / ${fmtMs(ps.max)}` : '-'),
-          line('Packet loss', last ? `${fmtPct(last.loss)} (up ${fmtPct(last.lossUp)}, down ${fmtPct(last.lossDown)})` : '-'),
+          line('Packet loss', last ? `↓${fmtPct(last.lossDown)} ↑${fmtPct(last.lossUp)}` : '-'),
           line('Loss avg / max', ls ? `${fmtPct(ls.avg)} / ${fmtPct(ls.max)}` : '-'),
           line('Bandwidth', last ? `↓${fmtBw(last.bwIn)} ↑${fmtBw(last.bwOut)}` : '-'),
           line('Codec', lastMeta && lastMeta.codec ? `${lastMeta.codec}${lastMeta.quality != null ? `, quality ${lastMeta.quality}/10` : ''}` : '-'),
@@ -144,7 +146,8 @@
           `Samples: ${samples.length} over ${samples.length > 1 ? Math.round((samples[samples.length - 1].t - samples[0].t) / 1000) : 0} s (interval ${S().interval} s)`,
           `Ping ms (min/avg/max/now): ${ps ? [ps.min, ps.avg, ps.max].map(x => Math.round(x * 10) / 10).join('/') : 'n/a'}/${r(last && last.ping, x => Math.round(x * 10) / 10)}`,
           `Jitter ms: ${r(last && last.jitter, x => x.toFixed(2))}`,
-          `Packet loss % (avg/max/now): ${ls ? [ls.avg, ls.max].map(x => x.toFixed(2)).join('/') : 'n/a'}/${r(last && last.loss, x => x.toFixed(2))}`,
+          `Packet loss % (worst direction avg/max/now): ${ls ? [ls.avg, ls.max].map(x => x.toFixed(2)).join('/') : 'n/a'}/${r(last && last.loss, x => x.toFixed(2))}`,
+          `Packet loss now: down ${r(last && last.lossDown, x => x.toFixed(2))} %, up ${r(last && last.lossUp, x => x.toFixed(2))} %`,
           `Bandwidth now: in ${r(last && last.bwIn, fmtBw)}, out ${r(last && last.bwOut, fmtBw)}`,
         ].join('\n');
       }

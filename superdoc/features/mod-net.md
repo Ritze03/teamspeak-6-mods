@@ -1,6 +1,6 @@
 # Net mod (connection quality)
 
-A HUD with live **ping** and **packet loss** (and optionally data rate in/out) for the displayed server connection, in the bottom bar of the channel tree pane next to the client's own connection-status
+A HUD with live **ping** and **packet loss** (down and up separately, and optionally data rate in/out) for the displayed server connection, in the bottom bar of the channel tree pane next to the client's own connection-status
 icons (default) or in the top bar.
 Click it for a popover with a 60 s history graph, min/avg/max, the current channel's codec and a **Copy diagnostics** button.
 Optional alerts. Default **off**; off removes the HUD, popover, timers and all statistics requests (vanilla client).
@@ -20,11 +20,16 @@ Built on [ts6-mod-api.md](ts6-mod-api.md); files: `panel/mods/net/` (`index.js`,
     Why inside the stock group and not a sibling: the bar's own auto-collapse (see [mod-layout.md](mod-layout.md) Create Channel)
     measures that group, so the label of Create Channel folds away early enough to leave the HUD its room.
   - **Top bar**: `api.topBar.add(element)` next to the mic/speaker buttons (the old placement).
-  Shows `<ping> ms`, `<loss> %` and, if enabled, `↓in ↑out` per second (short units). Hidden while not connected. Ping turns warning-coloured over
-  the ping limit, loss error-coloured over the loss limit (the limits are the alert limits, also with alerts off).
+  Shows `<ping> ms`, `↓<down>% ↑<up>%` (packet loss server to client / client to server) and, if enabled, `↓in ↑out` per second (short units). Hidden while not connected. Ping turns warning-coloured over
+  the ping limit, each loss direction error-coloured over the loss limit on its own (the limits are the alert limits, also with alerts off).
 - **Constant width** (`style.css`: `.net-ping`, `.net-loss`, `.net-bwv`): every field is an inline-block with a reserved `min-width`
-  and right-aligned tabular digits: ping `6ch` ("999 ms"), loss `6ch` ("99.9 %"; `fmtPct` always prints one decimal; "100.0 %" just grows the field), bandwidth
-  two boxes of `5.5ch` each (`↓12.3k`; a longer value like `↓1023k` grows its box). Gaps are 6 px. `fmtBwShort` uses a fixed unit set (B, k, M), one decimal below 100 for k/M, whole numbers
+  and right-aligned tabular digits: ping `6ch` ("999 ms"), loss two boxes of `5ch` each in `.net-lossv` (`↓0.0%`, `fmtPctShort` always prints one decimal, no space; `–` when a direction is unavailable; `↓99.9%` or `↓100.0%` just grows its box), bandwidth
+  two boxes of `5.5ch` each (`↓12.3k`; a longer value like `↓1023k` grows its box). Gaps are 4 px between fields, 2 px inside the loss and bandwidth pairs.
+  Measured at 13 px (bottom bar): ping 44.6 px, loss pair 76.3 px, bandwidth pair 83.8 px, HUD 220.7 px with typical values, so it fits the
+  228 px maximum on one row; only the extreme case (999 ms, 99.9 % both ways, 1023k both ways) overflows and then the data rate wraps out whole.
+  Top bar (with glyph) needs about 225 px, so at the minimum pane width the data rate drops out there.
+  Why separate up/down loss: the user asked for it; one number hid which direction was lossy. Why this compact form: the old single 6ch
+  loss box plus two direction boxes did not fit 228 px, so the `%` space was dropped and gaps narrowed. `fmtBwShort` uses a fixed unit set (B, k, M), one decimal below 100 for k/M, whole numbers
   otherwise (max 5 characters). The HUD's width therefore only changes when the bandwidth option is toggled, in both positions, and the
   stock icons beside it never move. Narrow-pane clipping (`maxWidth` from `api.net.bottomBar`) still drops whole fields by wrapping,
   it does not reflow them; the fixed boxes are wider than a short value, so at the minimum pane width bandwidth drops out first.
@@ -38,12 +43,12 @@ Built on [ts6-mod-api.md](ts6-mod-api.md); files: `panel/mods/net/` (`index.js`,
   `::before` that otherwise paints over static children.
 - **Popover**: body-level fixed node under the HUD, or above it when there is no room below (bottom bar) (a clipping toolbar cannot cut it). Opens on click or Enter/Space, closes on
   Escape, outside click, disconnect or disable. Contains: sparkline (ping line, loss bars, dashed ping-limit line, last 60 s),
-  ping now + jitter, ping min/avg/max, loss now (up/down) and avg/max, bandwidth, codec, channel, buttons.
+  ping now + jitter, ping min/avg/max, loss now (`↓down ↑up`) and avg/max (worst direction), bandwidth, codec, channel, buttons.
 - **Codec readout**: codec name and quality (0-10) of the channel you are in, from the channel's properties. Re-read when the
   popover opens and on every poll while it is open. Bitrate is **not** shown: the client exposes only the quality number and the
   quality-to-bitrate table is not available from the UI (not derived rather than guessed).
 - **Copy diagnostics**: plain text with client version/build, UI engine, OS, server version/platform, codec, sample count and
-  window, ping min/avg/max/now, jitter, loss avg/max/now, bandwidth. Written with `navigator.clipboard.writeText`, falling back
+  window, ping min/avg/max/now, jitter, loss now down/up and worst-direction avg/max/now, bandwidth. Written with `navigator.clipboard.writeText`, falling back
   to a hidden textarea + `execCommand('copy')`. The text is never logged; the button shows `Copied` / `Copy failed` and sets
   `data-copied="ok|fail"` for a moment.
 - **Alerts** (`index.js:checkAlerts`): off by default. A toast (`api.toast`) fires when a metric exceeds its limit in 2 consecutive
@@ -69,7 +74,7 @@ Built on [ts6-mod-api.md](ts6-mod-api.md); files: `panel/mods/net/` (`index.js`,
   `server2clientPacketlossTotal`, `bandwidth{Received,Sent}LastSecondTotal`, byte/packet counters. Why this call: the connection
   handler object has no cached ping/loss fields; they only exist after a request, so the mod must poll (kept to one request per
   interval, only while on).
-- **Loss unit**: the client reports a 0..1 fraction; the mod shows `fraction * 100` and uses the worst of total/up/down. This was
+- **Loss unit**: the client reports a 0..1 fraction; the mod shows `fraction * 100`: HUD and popover show down (`server2clientPacketlossTotal`) and up (`client2serverPacketlossTotal`); alerts, graph and the loss limit statistic use `loss` = worst of total/up/down (unchanged, so they react to either direction). This was
   checked only at 0 % (loopback has no loss); the unit is an assumption from the TeamSpeak query convention.
 - Server version/platform come from the connection's server properties, codec from the own channel's properties (`api.net.meta()`).
 
@@ -95,7 +100,7 @@ Needs a modded client (see [ts6-mod-api.md](ts6-mod-api.md) "Tests"); for the li
 node tools/test/run-all.mjs --cdp-port <cdp> --control-port <ctl> --only net
 ```
 
-`panel/mods/net/test.mjs` asserts: off by default and no requests while off; enable shows the HUD; ping (`N ms`) and loss (`N %`)
+`panel/mods/net/test.mjs` asserts: off by default and no requests while off; enable shows the HUD; ping (`N ms`) and loss (`↓N.N% ↑N.N%`)
 appear and the update counter (`data-updates`) increases; bandwidth shown by default; popover opens, sparkline and codec are
 drawn and the popover is on screen; Copy diagnostics reports an outcome (and, if the clipboard can be read, the block contains
 the expected lines); Escape closes the popover; with alerts on and an impossible limit exactly one toast fires and none repeats
