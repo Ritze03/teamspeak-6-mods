@@ -1,4 +1,4 @@
-// Audio mod: the AGC page (master, mode, every parameter, built-in/custom presets), the vanilla rule (mod off = native AGC
+// Audio mod: the AGC page (AGC dropdown, mode, every parameter, built-in/custom presets), the vanilla rule (mod off = native AGC
 // off), the per-user popover (volume/mute/boost/AGC override, saved per UID, pushed to the native module) and cleanup.
 // Safe on a real client: the per-user part (it mutes a user locally, which TeamSpeak sends to the server as a client mute request) runs
 // ONLY on the local test server (ctx.onTestServer()); the native master switch stays OFF while modes/overrides are edited (so the
@@ -45,23 +45,39 @@ export default async function (ctx) {
     ctx.equal(await ctx.eval(`document.querySelectorAll('${BODY}').length`), 0, 'no settings DOM until the Mods page is open');
     await ctx.openModsPage('audio', 'Parameters');
     await ctx.waitFor(`document.querySelectorAll('${BODY}').length === 1`, 'audio area on the Mods page');
-    ctx.assert(await ctx.eval(`/Automatic Gain Control/.test(document.querySelector('${BODY}').textContent)`), 'stock AGC toggle is listed');
+    ctx.assert(await ctx.eval(`!!document.querySelector('${BODY} select[data-act="agc"]')`), 'AGC dropdown is listed');
 
     if (nativeUp) {
       await ctx.waitFor(`!!document.querySelector('${BODY} [data-key="target_db"]') && !document.querySelector('${BODY} [data-key="target_db"]').closest('[hidden]')`, 'AGC controls shown');
       const a = await reqs(); await ctx.sleep(700);
       ctx.assert(await reqs() > a, 'meters/status are polled while the page is shown');
 
-      // master switch (whole mode: the hook is not involved), through the real toggle
+      // AGC dropdown (whole mode: the hook is not involved), through the real select
       await nat('/config', { mode: 'whole' });
       await ctx.openModsPage('audio', 'Processing');
       await ctx.waitFor(`document.querySelector('${BODY}') && /Whole stream/.test(document.querySelector('${BODY}').textContent)`, 'page up');
-      await clickText(BODY, 'Audio processing (AGC)');
-      await ctx.sleep(500);
-      ctx.equal((await nat('/config')).enabled, true, 'master switch on -> native enabled');
-      ctx.equal((await store()).master, true, 'master choice remembered');
-      await clickText(BODY, 'Audio processing (AGC)'); await ctx.sleep(500);
-      ctx.equal((await nat('/config')).enabled, false, 'master switch off -> native disabled');
+      const pickAgc = async v => { await ctx.eval(`(() => { const s = document.querySelector('${BODY} select[data-act="agc"]'); s.value = ${JSON.stringify(v)}; s.dispatchEvent(new Event('change', { bubbles: true })); return 1; })()`); await ctx.sleep(500); };
+      await pickAgc('ts6mods');
+      ctx.equal((await nat('/config')).enabled, true, 'dropdown TS6Mods -> native enabled');
+      ctx.equal((await store()).agcMode, 'ts6mods', 'AGC choice remembered');
+      await pickAgc('vanilla');
+      ctx.equal((await nat('/config')).enabled, false, 'dropdown Vanilla -> native disabled');
+      ctx.equal((await store()).agcMode, 'vanilla', 'AGC choice remembered (Vanilla)');
+      // stock keys (only when the client has a settings model, i.e. is connected): TS6Mods = both off, Vanilla = agc on, Experimental = both on; mod off restores the originals
+      const stk = () => ctx.eval(`JSON.parse(JSON.stringify(__ts6mod.mods().get('audio').api.stockAgc.read()))`);
+      if (await stk()) {
+        await pickAgc('ts6mods'); let k = await stk(); ctx.assert(!k.agc && !k.experimental, 'TS6Mods -> stock AGC and experimental off');
+        await pickAgc('vanilla'); k = await stk(); ctx.assert(k.agc && !k.experimental, 'Vanilla -> stock AGC on, experimental off');
+        await pickAgc('experimental'); k = await stk(); ctx.assert(k.agc && k.experimental, 'Vanilla (Experimental) -> stock AGC and experimental on');
+        ctx.equal((await nat('/config')).enabled, false, 'Vanilla (Experimental) -> native disabled');
+        const orig = (await store()).stockOrig; ctx.assert(!!orig, 'pre-mod stock values remembered');
+        await ctx.disable('audio'); await ctx.sleep(500); k = await stk();
+        ctx.equal(k.agc, !!orig.agc[k.device], 'mod off restores the stock AGC value of the device');
+        if (orig.exp !== undefined) ctx.equal(k.experimental, !!orig.exp, 'mod off restores the experimental flag');
+        await ctx.enable('audio'); await nat('/config', { enabled: false });
+        await ctx.openModsPage('audio', 'Processing');
+        await pickAgc('vanilla');
+      }
 
       // mode
       await clickText(BODY, 'Per speaker'); await ctx.sleep(500);
@@ -152,12 +168,12 @@ export default async function (ctx) {
       await nat('/config', { preset: 'balanced', ratio: 5 });   // values no longer match anything: nothing highlighted
       await ctx.waitFor(`!document.querySelector('${BODY} [data-preset].on')`, 'unknown name with unmatched values highlights nothing', 5000);
 
-      // quick off -> on: the enable must wait for the disable's post, or it reads a stale /config and loses the master switch
-      await ctx.eval(`(() => { __ts6mod.store().settings.audio.master = true; return 1; })()`);
+      // quick off -> on: the enable must wait for the disable's post, or it reads a stale /config and loses the AGC choice
+      await ctx.eval(`(() => { __ts6mod.store().settings.audio.agcMode = 'ts6mods'; return 1; })()`);
       for (let i = 0; i < 4; i++) {
         await ctx.eval(`(async () => { await __ts6mod.setEnabled('audio', false, { persist: false }); await __ts6mod.setEnabled('audio', true, { persist: false }); return 1; })()`);
         await ctx.sleep(300);
-        ctx.equal((await nat('/config')).enabled, true, `back-to-back off/on #${i + 1}: native enabled equals the stored master switch`);
+        ctx.equal((await nat('/config')).enabled, true, `back-to-back off/on #${i + 1}: native enabled equals the stored AGC choice`);
       }
       await nat('/config', { enabled: false });
       await ctx.openModsPage('audio');

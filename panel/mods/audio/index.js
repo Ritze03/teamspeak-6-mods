@@ -1,4 +1,4 @@
-/* Audio mod: the full AGC page (master switch, whole-stream / per-speaker mode, every DSP parameter, presets with user presets,
+/* Audio mod: the full AGC page (AGC dropdown, whole-stream / per-speaker mode, every DSP parameter, presets with user presets,
  * live meters, per-speaker list), the per-user "Audio..." popover (volume, mute, boost past the stock limit, per-user AGC
  * override, saved per UID) and TeamSpeak's own two playback AGC toggles. TeamSpeak names live in panel/core/x-audio.js
  * (api.peers). Native side: native/ts6mod.c control API (/config /status /meters /speakers /speaker).
@@ -53,7 +53,42 @@
     }, now ? 0 : 150);
     sync();
   }
-  const guarded = fn => { try { S.error = ''; fn(); } catch (e) { S.error = String(e && e.message || e); } S.stock = modApi.audio.stock(); sync(); };
+
+  /* ---------------- AGC choice (dropdown) and TeamSpeak's stock playback AGC ----------------
+   * TS6Mods = our processing on, stock AGC + experimental off (two levelers must not stack); Vanilla = ours off, stock AGC on;
+   * Vanilla (Experimental) = ours off, stock AGC on + experimental on (experimental is only a modifier: with agc off it does nothing).
+   * The user's own stock values are remembered in storage (`stockOrig`: {agc: {deviceId: bool}, exp: bool}) the first time we are
+   * about to change them, and put back when the mod is switched off (vanilla rule). */
+  const CHOICES = [['ts6mods', 'TS6Mods'], ['vanilla', 'Vanilla'], ['experimental', 'Vanilla (Experimental)']];
+  const STOCK = { ts6mods: { agc: false, exp: false }, vanilla: { agc: true, exp: false }, experimental: { agc: true, exp: true } };
+  const choice = () => { const c = modApi && modApi.storage.get('agcMode'); return STOCK[c] ? c : 'ts6mods'; };
+  function applyStock() {   // write the stock values of the current choice (active output device + global flag); only changed values
+    const a = modApi; if (!a) return;
+    try {
+      const cur = a.stockAgc.read(); if (!cur) return;   // not connected yet: the device watcher retries
+      const want = STOCK[choice()], o = a.storage.get('stockOrig') || { agc: {} };
+      let save = false;
+      if (!(cur.device in o.agc) && cur.agc !== want.agc) { o.agc[cur.device] = cur.agc; save = true; }
+      if (o.exp === undefined && cur.experimental !== want.exp) { o.exp = cur.experimental; save = true; }
+      if (save) a.storage.set('stockOrig', o);   // remembered BEFORE the first write
+      a.stockAgc.write({ agc: want.agc, experimental: want.exp });
+      S.lastDevice = cur.device; S.error = '';
+    } catch (e) { S.error = String(e && e.message || e); }
+    S.stock = a.stockAgc.read();
+  }
+  function restoreStock(a) {   // mod off: the user's stock values back; kept for later if the settings model is not reachable
+    const o = a.storage.get('stockOrig'); if (!o) return;
+    try {
+      if (!a.stockAgc.read()) return;
+      for (const [dev, v] of Object.entries(o.agc || {})) { try { a.stockAgc.write({ agc: v, device: dev }); } catch (e) { /* that device is gone */ } }
+      if (o.exp !== undefined) a.stockAgc.write({ experimental: o.exp });
+      a.storage.remove('stockOrig');
+    } catch (e) { /* keep stockOrig: the next enable/disable tries again */ }
+  }
+  function setChoice(c) {
+    modApi.storage.set('agcMode', c); applyStock();
+    if (S.native === 'ok') patch({ enabled: c === 'ts6mods' }, true); else sync();
+  }
 
   /* ---------------- presets ---------------- */
   /* user presets: {id: {name, values}}; the native config only stores the preset key (letters, digits, _ and - only), so the
@@ -156,8 +191,10 @@
   const MODE_NAMES = { whole: 'Whole stream', per_speaker: 'Per speaker' };
   /* "Per speaker · Voice": the card status line and (with the delay) the tab bar status; null while the native side is unknown */
   function statusBits(withDelay) {
+    const ch = S && modApi ? choice() : 'ts6mods';
+    if (ch !== 'ts6mods') return [ch === 'vanilla' ? 'Vanilla AGC' : 'Vanilla AGC (experimental)'];
     if (!S || S.native !== 'ok' || !S.cfg) return S && S.native === 'absent' ? ['native module not loaded'] : null;
-    const c = S.cfg, bits = [c.enabled ? MODE_NAMES[c.mode] || c.mode : 'AGC off'];
+    const c = S.cfg, bits = [MODE_NAMES[c.mode] || c.mode];
     const k = c.preset && presetValues(c.preset) ? c.preset : Object.keys(PRESETS).find(id => same(c, PRESETS[id].values));
     bits.push(k ? (withDelay ? 'preset ' : '') + presetName(k) + (same(c, presetValues(k)) ? '' : ' (modified)') : 'custom values');
     if (withDelay && c.enabled && S.status) {
@@ -174,7 +211,15 @@
     const { ui } = api, h = ui.h;
     const absent = h('p', { class: 'mods-note' });
     const status = h('p', { class: 'mods-status' });
-    const master = ui.toggle({ title: 'Audio processing (AGC)', sub: 'Leveler and limiter (optional compressor) on the voices you hear. Off = vanilla audio, bit-exact, no added delay.', onChange: v => { api.storage.set('master', v); patch({ enabled: v }, true); } });
+    const agcSel = h('select', { class: 'aud-select', 'data-act': 'agc' }, ...CHOICES.map(([v, l]) => h('option', { value: v }, l)));
+    agcSel.addEventListener('change', () => setChoice(agcSel.value));
+    const agcRow = h('div', { class: 'mods-row aud-agc' }, h('label', {}, 'AGC'), agcSel);
+    const agcHelp = h('p', { class: 'mods-note aud-help' }), stockLine = h('p', { class: 'mods-note aud-help' });
+    const AGC_HELP = {
+      ts6mods: 'Our leveler and limiter (optional compressor) on the voices you hear; TeamSpeak\'s own playback AGC is switched off so two levelers never stack.',
+      vanilla: 'Our processing is off (bit-exact, no added delay); TeamSpeak\'s own playback AGC is on.',
+      experimental: 'Our processing is off; TeamSpeak\'s own playback AGC is on with its hidden experimental mode (re-opens the playback stream, short glitch).',
+    };
     const modePills = [['whole', 'Whole stream'], ['per_speaker', 'Per speaker']].map(([m, label]) => ({ m, b: ui.pill({ label, onClick: () => patch({ mode: m }, true) }) }));
     const modeHelp = h('p', { class: 'mods-note aud-help' });
 
@@ -250,27 +295,22 @@
       userEmpty.hidden = ids.length > 0;
     }
 
-    /* stock toggles */
-    const stockAgc = ui.toggle({ title: 'Automatic Gain Control', sub: 'TeamSpeak\'s own playback AGC (the stock setting of the active playback device).', onChange: v => guarded(() => api.audio.setStockAgc(v)) });
-    const stockExp = ui.toggle({ title: 'Experimental AGC mode', sub: 'TeamSpeak\'s hidden "Playback AGC Experimental Mode" developer option. Re-opens the playback stream (short audio glitch).', onChange: v => guarded(() => api.audio.setExperimentalAgc(v)) });
-    const stockNone = ui.row(h('p', { class: 'mods-absent' }, 'TeamSpeak audio settings are not available yet (not connected?).'));
-    const stock = h('div', {}, stockAgc.el, stockExp.el, stockNone);
     const err = h('p', { class: 'mods-error' });
 
     /* layout: four tabs of boxes (the page lays each ui.section out as a box) */
-    const procBox = ui.section('Master switch', master.el, status);
+    const procBox = ui.section('AGC', agcRow, agcHelp, stockLine, status);
     const modeBox = ui.section('Mode', h('div', { class: 'mods-row' }, ...modePills.map(x => x.b.el)), modeHelp);
     const presetBox = ui.section('Presets', presetRow, h('div', { class: 'mods-row' }, modified), presetNote, nameRow, presetActs);
     const groupBoxes = groups;
     const usersBox = ui.section('Per-user settings', ui.note('Right-click a user in the channel tree and choose "Audio..." to set their volume, mute, boost or own AGC values. Saved by identity.'), userList, userEmpty);
     usersBox.classList.add('mods-span'); speakersBox.classList.add('mods-span');
-    const agcBoxes = [procBox, modeBox, presetBox, ...groupBoxes, wholeMeters, speakersBox, usersBox];   // shown only while the native module answers
-    const dimBoxes = [modeBox, presetBox, ...groupBoxes, wholeMeters, speakersBox];                     // dimmed while the master switch is off
+    const agcBoxes = [modeBox, presetBox, ...groupBoxes, wholeMeters, speakersBox, usersBox];   // shown only while the native module answers
+    const dimBoxes = [modeBox, presetBox, ...groupBoxes, wholeMeters, speakersBox];                     // dimmed while our processing is off (a Vanilla choice)
     const tabs = ui.tabs([
       { name: 'Processing', content: [procBox, modeBox] },
       { name: 'Presets', content: [presetBox] },
       { name: 'Parameters', content: [...groupBoxes, wholeMeters, speakersBox] },
-      { name: 'Per-user', content: [usersBox, ui.section('TeamSpeak playback AGC', stock)] },
+      { name: 'Per-user', content: [usersBox] },
     ]);
     const resetVoice = ui.button({ label: 'Reset to Voice', kind: 'link', onClick: () => patch({ preset: 'voice', ...PRESETS.voice.values }, true) });
     const saveAs = ui.button({ label: 'Save as preset…', kind: 'link', onClick: () => { tabs.select('Presets'); bSave.click(); } });
@@ -314,8 +354,10 @@
       tabs.aside.textContent = (statusBits(true) || []).join(' · ');
       absent.textContent = S.native === 'unknown' ? 'Checking for the native module...' :
         'Native module not loaded (or the launcher\'s injector is not running). The AGC needs the client to be started with launcher/ts6-mod (see superdoc/features/agc.md). Without it the client is vanilla; the two stock settings (tab Per-user) still work.';
+      const ch = choice();
+      agcSel.value = ch; agcHelp.textContent = AGC_HELP[ch] + (ch === 'ts6mods' ? ' Per-user boost, bypass and custom AGC (right-click menu) need per-speaker mode with TS6Mods; per-user volume and mute work with every choice.' : '');
+      const sk = S.stock; stockLine.textContent = sk ? 'TeamSpeak playback AGC now: ' + (sk.agc ? 'on' : 'off') + ', experimental ' + (sk.experimental ? 'on' : 'off') + '.' : 'TeamSpeak audio settings are not available yet (not connected?).';
       if (ok) {
-        master.set(!!c.enabled);
         const st = S.status, ps = st && st.per_speaker;
         status.textContent = !st ? '' : 'Module ' + st.version + ' | ' + (st.mode === 'processing' ? 'processing' : 'passthrough') +
           (c.mode === 'per_speaker' ? ' | per speaker' + (ps ? (ps.hook_installed ? (ps.active ? ', ' + ps.speakers + ' speaker' + (ps.speakers === 1 ? '' : 's') + ', delay ' + ps.added_latency_ms.toFixed(1) + ' ms' : ', idle') : ', hook not installed') : '') :
@@ -340,8 +382,6 @@
         wholeMeters.hidden = c.mode !== 'whole'; speakersBox.hidden = c.mode !== 'per_speaker';
         syncMeters(); syncSpeakers(); renderUsers();
       }
-      const sk = S.stock; stockAgc.el.hidden = stockExp.el.hidden = !sk; stockNone.hidden = !!sk;
-      if (sk) { stockAgc.set(sk.agc); stockExp.set(sk.experimental); }
       err.textContent = S.error; err.hidden = !S.error;
     } };
     view.sync();
@@ -355,9 +395,9 @@
         else { S.meters = await api.native.get('/meters'); if (view) view.syncMeters(); }
       } catch (e) { S.native = 'absent'; S.meters = null; S.speakers = []; sync(); } finally { busy = false; }
     };
-    (async () => { S.stock = api.audio.stock(); await refreshStatus(); sync(); })();
+    (async () => { S.stock = api.stockAgc.read(); await refreshStatus(); sync(); })();
     api.interval(live, 120);
-    api.interval(async () => { if (document.hidden) return; S.stock = api.audio.stock(); if (!pending) await refreshStatus(); sync(); }, 2000);
+    api.interval(async () => { if (document.hidden) return; S.stock = api.stockAgc.read(); if (!pending) await refreshStatus(); sync(); }, 2000);
     return () => { view = null; };
   }
 
@@ -368,8 +408,8 @@
       const { ui } = api, h = ui.h, rec = () => users()[peer.uid] || {}, edit = fn => editUser(peer, fn);
       if (!peer.uid) { body.append(ui.note('This user has no identity yet, so settings could not be saved for them.')); return; }
       const modeNote = h('div', { class: 'mods-note' });
-      const goPer = ui.button({ label: 'Switch to per-speaker mode', onClick: () => patch({ mode: 'per_speaker', enabled: true }, true) });
-      modeNote.append('Boost, bypass and custom AGC only work in per-speaker mode with the AGC switched on. ', goPer);
+      const goPer = ui.button({ label: 'Switch to per-speaker mode', onClick: () => { api.storage.set('agcMode', 'ts6mods'); applyStock(); patch({ mode: 'per_speaker', enabled: true }, true); } });
+      modeNote.append('Boost, bypass and custom AGC only work in per-speaker mode with the AGC set to TS6Mods. ', goPer);
 
       const vol = ui.slider({ label: 'Volume', min: api.peers.range.min, max: api.peers.range.max, step: 0.5, unit: 'dB', value: 0, onInput: x => edit(r => { r.vol = x; }) });
       const volReset = ui.button({ label: 'Reset volume', kind: 'link', onClick: () => { edit(r => { delete r.vol; }); api.peers.getVolume(peer.schid, peer.id).then(v => vol.set(v)).catch(() => {}); } });
@@ -424,27 +464,31 @@
     icon: 'M4 9h4l5-4v14l-5-4H4z M16 9a4 4 0 0 1 0 6',
     summary: 'Leveler, compressor and limiter for the voices you hear, plus per-user volume in the right-click menu.',
     keywords: ['AGC', 'Automatic gain control', 'Whole stream', 'Per speaker', 'Presets', ...Object.values(PRESETS).map(p => p.title), ...PARAMS.map(p => p[1]),
-      'Leveler', 'Compressor', 'Limiter', 'Live meters', 'Per-user settings', 'Volume', 'Mute', 'Boost', 'Experimental AGC mode', 'TeamSpeak playback AGC'],
+      'Leveler', 'Compressor', 'Limiter', 'Live meters', 'Per-user settings', 'Volume', 'Mute', 'Boost', 'Experimental AGC mode', 'TeamSpeak playback AGC', 'Vanilla', 'TS6Mods'],
     status: () => (statusBits(false) || []).join(' · '),
-    description: 'Automatic gain control for the voices you hear (leveler, compressor, limiter; whole stream or per speaker; presets and every parameter), per-user volume/mute/boost/AGC in the right-click menu, and the two stock TeamSpeak playback AGC options. Switching this mod off also switches the native AGC off.',
+    description: 'Automatic gain control for the voices you hear (leveler, compressor, limiter; whole stream or per speaker; presets and every parameter), per-user volume/mute/boost/AGC in the right-click menu, and an AGC dropdown (TS6Mods, Vanilla, Vanilla (Experimental)) that also drives the client\'s own playback AGC. Switching this mod off turns our AGC off and puts your stock AGC settings back.',
     async enable(api) {
       if (offPost) { await offPost; offPost = null; }   // a quick off->on must not read /config before the disable's post has landed
       modApi = api; S = { native: 'unknown', cfg: null, status: null, meters: null, speakers: [], stock: null, error: '' }; pending = null;
-      try {   // vanilla rule: the native master switch follows the mod; the user's own choice is remembered here ("master")
+      /* migration: the old master on/off switch ("master") becomes the dropdown (on -> TS6Mods, off -> Vanilla); fresh install: TS6Mods */
+      if (api.storage.get('agcMode') === undefined) { const m = api.storage.get('master'); api.storage.set('agcMode', m === false ? 'vanilla' : 'ts6mods'); }
+      api.storage.remove('master');
+      try {   // vanilla rule: the native switch follows the choice (and the mod: disable() turns it off)
         const cfg = await api.native.get('/config'); S.native = 'ok'; S.cfg = cfg;
-        let m = api.storage.get('master'); if (m === undefined) { m = !!cfg.enabled; api.storage.set('master', m); }   // first run: adopt what the native config had
-        if (!!cfg.enabled !== m) S.cfg = await api.native.post('/config', { enabled: m });
+        const want = choice() === 'ts6mods';
+        if (!!cfg.enabled !== want) S.cfg = await api.native.post('/config', { enabled: want });
       } catch (e) { S.native = 'absent'; }
       api.contextMenu.client.add({ label: 'Audio...', icon: 'settings-audio', visible: t => !api.peers.target(t).self, onClick: t => { const p = api.peers.target(t); if (p.id != null) openUser(p); } });
       let cancel = () => {}; const later = () => { cancel(); cancel = api.timeout(syncPeers, 300); };
       api.peers.onChange(later); api.interval(syncPeers, 3000);
+      applyStock();
+      api.interval(() => { const c = api.stockAgc.read(); if (c && c.device !== S.lastDevice) { applyStock(); sync(); } }, 3000);   // connected later / playback device changed: apply to the new device
       syncPeers();
     },
     disable() {   // flush a debounced change, restore what we changed on users, switch the native AGC off (vanilla)
       cancelPend(); const a = modApi, p = pending; pending = null;
       if (a) {
-        if (a.storage.get('master') === undefined && S && S.cfg) a.storage.set('master', !!S.cfg.enabled);
-        clearPeers();
+        clearPeers(); restoreStock(a);
         /* ONE post, sent now: pending changes and the switch-off together (two chained posts left a request in flight after disable) */
         offPost = a.native.post('/config', Object.assign({}, p, { enabled: false })).catch(() => {});
       }

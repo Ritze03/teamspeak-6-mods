@@ -34,7 +34,7 @@ does not mute on this build); check with `tools/rig/audio-audit.mjs <cdp-port>`.
 
 Settings -> Mods -> Audio card (tabs Processing, Presets, Parameters, Per-user). Needs the PulseAudio/PipeWire-pulse backend.
 
-1. **Whole stream.** Mode "whole stream", master switch on, preset Voice. Let someone speak loudly, then quietly.
+1. **Whole stream.** Mode "whole stream", AGC dropdown "TS6Mods", preset Voice. Let someone speak loudly, then quietly.
    Expect: status line says processing; the meters move (input level, gain reduction, leveler gain); quiet speech is lifted, loud speech
    never gets above the ceiling (default -1 dB peak), and the first syllable of a loud speaker has no start-of-speech spike.
 2. **Per speaker.** Switch mode to "per speaker" (the page explains it). With two people talking at different volumes.
@@ -46,9 +46,13 @@ Settings -> Mods -> Audio card (tabs Processing, Presets, Parameters, Per-user).
    "modified"; Save as... creates your own preset, Update/Rename/Delete work, Revert returns to the preset.
 4. **Per-user Audio...** Right-click a user in the channel tree -> "Audio..." (or Edit... in the page's per-user list). Try volume, mute,
    boost (0 to +24 dB), AGC "Bypass" and "Custom".
-   Expect: the change is audible for that user only; boost and AGC overrides act only in per-speaker mode with the master on (the popover
+   Expect: the change is audible for that user only; boost and AGC overrides act only in per-speaker mode with TS6Mods selected (the popover
    says so); Reset restores everything; the setting is back after you reconnect or restart the client (stored per user).
-5. **Switch the mod off.** Expect: audio is untouched (status: passthrough, delay 0), per-user volume and mute are back to what they were.
+5. **AGC dropdown.** Processing tab, box "AGC": TS6Mods / Vanilla / Vanilla (Experimental). Expect: Vanilla = status passthrough, parameter boxes
+   dimmed, Settings -> Audio -> Playback "Automatic Gain Control" on; Vanilla (Experimental) = same plus the hidden dev card's experimental mode on;
+   TS6Mods = both stock options off and our processing on. The Mods card says "Vanilla AGC" / "Vanilla AGC (experimental)" for the Vanilla choices.
+6. **Switch the mod off.** Expect: audio is untouched (status: passthrough, delay 0), per-user volume and mute are back to what they were, and
+   the stock Playback AGC / experimental options are back to the values you had before the mod first changed them.
 
 Known limits: whole mode shares one gain for all speakers; enabling processing adds the lookahead delay (default 5 ms) to all playback.
 

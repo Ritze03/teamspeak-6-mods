@@ -4,6 +4,9 @@
 .aud-name { width: 200px; background: var(--mods-field-bg); color: inherit; border: 1px solid var(--mods-field-line); border-radius: 4px; padding: 3px 6px; font: inherit; }
 .aud-inline-err { margin: 0; }
 .aud-modified { margin-left: 4px; }
+.aud-agc { align-items: center; gap: 10px; }
+.aud-select { background: var(--mods-field-bg); color: inherit; border: 1px solid var(--mods-field-line); border-radius: 4px; padding: 3px 6px; font: inherit; }
+.aud-select option { background: var(--mods-field-bg, Canvas); color: inherit; }
 .aud-sprow, .aud-user { display: grid; grid-template-columns: 130px minmax(160px, 1fr) 110px auto auto; align-items: center; gap: 10px; margin: 6px 0; }
 .aud-user { display: flex; flex-wrap: wrap; }
 .aud-uname { min-width: 140px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -44,6 +44,35 @@
     },
   }));
 
+  /* TeamSpeak's stock playback AGC (per output device `agc`, global `agcExperimentalMode`), used by the audio mod's "AGC"
+   * dropdown: api.stockAgc.read() -> {device, agc, experimental} | null (settings model not available: not connected);
+   * write({agc?, experimental?, device?}) goes through the same setters as the stock toggles (persisted with save();
+   * `device` defaults to the active output device). Only changed values are written: the experimental flag reopens the
+   * playback stream (short glitch). Why per device: the stock `agc` toggle belongs to the device in the `devices` map. */
+  const outSettings = () => A.tryGet('audio.settings');
+  const deviceMode = (s, id) => { for (const [mode, list] of s[0].devices) if (list.some(e => e[0].id === id)) return mode; return null; };
+  boot.core.coreApi('stockAgc', () => { const impl = {
+    read() {
+      const s = outSettings(); if (!s) return null;
+      try { const b = s.buildPlaybackDspBlob(), id = s[0].device && s[0].device.id; return b && id ? { device: id, agc: !!b.agc, experimental: !!b.agc_experimental_mode } : null; } catch (e) { return null; }
+    },
+    write(o) {
+      const s = outSettings(); if (!s) throw new Error('audio settings unavailable');
+      const cur = impl.read(); let dirty = false;
+      if (o.agc !== undefined) {
+        const id = o.device || (cur && cur.device), mode = id && deviceMode(s, id);
+        if (mode == null) throw new Error('output device not found');
+        if (!(cur && cur.device === id && cur.agc === !!o.agc)) { s.onAudioDspSettingsChanged({ io: 0, settings: { mode, deviceId: id, agc: !!o.agc } }); dirty = true; }
+      }
+      if (o.experimental !== undefined && !(cur && cur.experimental === !!o.experimental)) {
+        s[0].global.agcExperimentalMode = !!o.experimental;
+        A.get('app.connections').forEach(c => c.serverConnectionHandler.audio.Update());   // pushes agc_experimental_mode (reopens the stream)
+        dirty = true;
+      }
+      if (dirty) s.save();
+    },
+  }; return impl; });
+
   /* Vanilla rule at client start: with the audio mod switched off the native AGC must be off too, but a mod that is off runs
    * no code. This one-shot (a core file, so it loads regardless of the mod switch) turns a still-enabled native AGC off.
    * It waits for the core to be started (blob loaded) so it knows whether the mod is on; at most once per page load. */
