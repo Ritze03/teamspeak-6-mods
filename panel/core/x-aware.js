@@ -6,7 +6,7 @@
  *   api.aware.expandedClients()            [{schid, id}] clients whose channel row is visible in the tree (every ancestor expanded), not ourselves
  *   api.aware.otherRows()                  [{schid, id}] client rows rendered right now (on screen) that are not in my channel, not
  *                                          ourselves, and not flagged talking by the client itself (whose talk status the client does not know)
- *   api.aware.requestInfo(schid, clientId) ONE bridge request (counted in stats); stores the answer's idle time
+ *   api.aware.requestInfo(schid, clientId) ONE bridge request (counted in stats, 5 s timeout, null while one is in flight for that client); stores the answer's idle time
  *   api.aware.idleMs(clientModel)          last polled idle time of that client in ms (grows with the age of the answer), or null
  *   api.aware.answer(schid, clientId)      {ms, at} raw last answer (idle ms, answer time) or null
  *   api.aware.askedAt(schid, clientId)     time the last request for that client went out (0 = never)
@@ -24,6 +24,8 @@
   const A = boot.anchors;
   const stats = { requests: 0 };
   const idle = new Map();               // `${schid}:${clientId}` -> {ms, at}
+  const inflight = new Set();           // keys with a request on its way
+  const REQUEST_TIMEOUT = 5000;         // ms; a lost callback is given up after this
   const asked = new Map();              // `${schid}:${clientId}` -> time the last request went out
   /* Talk circle: the client row's icon stack carries the class "talking" while the client model's properties.flagTalking is set
    * (computed cssClasses); its CSS then shows the talking arcs in the theme's colour. MARK tells our additions apart from the stock ones. */
@@ -136,10 +138,15 @@
     answer(schid, clientId) { return idle.get(schid + ':' + clientId) || null; },
     askedAt: (schid, clientId) => asked.get(schid + ':' + clientId) || 0,
     async requestInfo(schid, clientId) {
-      stats.requests++; asked.set(schid + ':' + clientId, Date.now());
-      const info = await A.bridge.call('requestConnectionInfo', schid, clientId);
-      if (info && typeof info.idleTime === 'number') idle.set(schid + ':' + clientId, { ms: info.idleTime, at: Date.now() });
-      return info;
+      const key = schid + ':' + clientId;
+      if (inflight.has(key)) return null;   // one request per client at a time
+      inflight.add(key); stats.requests++; asked.set(key, Date.now());
+      try {
+        // A bridge call can occasionally never call back: race a timeout so one lost callback cannot freeze the poller (same guard as x-net.js:poll)
+        const info = await Promise.race([A.bridge.call('requestConnectionInfo', schid, clientId), new Promise(res => setTimeout(() => res(null), REQUEST_TIMEOUT))]);
+        if (info && typeof info.idleTime === 'number') idle.set(key, { ms: info.idleTime, at: Date.now() });
+        return info;
+      } finally { inflight.delete(key); }
     },
     idleMs(model) { const e = idle.get((model.sc_handler && model.sc_handler.id) + ':' + model.id); return e ? e.ms + (Date.now() - e.at) : null; },
     stats: () => Object.assign({}, stats),
