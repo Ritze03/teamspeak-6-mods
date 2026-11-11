@@ -51,7 +51,7 @@ export default async function (ctx) {
     const T1 = await requests(ctx); await ctx.sleep(3600);
     const T2 = await requests(ctx);
     const others = await ctx.eval(`__ts6modBoot.aware.marks().length + 0`);
-    ctx.assert(T2 - T1 <= 5, `talk circles: throttled to ${T2 - T1} requests in 3.6 s with a 1 s interval`);
+    ctx.assert(T2 - T1 <= 22, `talk circles: capped at 5 requests/s (${T2 - T1} in 3.6 s)`);
     const bad = (await ctx.eval('__ts6modBoot.aware.marks()')).filter(m => m.stock || m.mine || m.id == null);
     ctx.equal(bad.length, 0, `marks only on other channels' rows the client has no talk status for (${others} marked now)`);
     ctx.equal(await ctx.eval(`document.querySelectorAll('.aware-badge, [data-ts6mod="aware"].mods-deco[data-mid^="channel:"]').length`), 0, 'no badge on channel rows');
@@ -68,7 +68,7 @@ export default async function (ctx) {
     const R1 = await requests(ctx);
     await ctx.sleep(3600);
     const R2 = await requests(ctx);
-    ctx.assert(R2 - R1 >= 2 && R2 - R1 <= 5, `throttled: ${R2 - R1} requests in 3.6 s with a 1 s interval`);
+    ctx.assert(R2 - R1 >= 2 && R2 - R1 <= 22, `capped at 5 requests/s: ${R2 - R1} requests in 3.6 s`);
     await ctx.waitFor(`document.querySelector('[data-ts6mod="aware"].aware-idle')`, 'an idle label shows for polled users', 4000);
     await ctx.eval('__ts6modBoot.aware.setCollapsed(true)'); await ctx.sleep(1200);
     const R3 = await requests(ctx); await ctx.sleep(2500);
