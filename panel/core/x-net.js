@@ -29,7 +29,10 @@
         const h = handler(); if (!h) return null;
         requests++;
         let s;
-        try { s = await anchors.bridge.call('requestConnectionInfo', h.id, h.ownClientId); } catch (e) { return null; }
+        /* Why the timeout: the client sometimes never calls the callback back (dead handler during a reconnect / server switch); without a
+           deadline the awaiting tick would hang forever and the HUD would freeze on its last values. */
+        let timer;
+        try { s = await Promise.race([anchors.bridge.call('requestConnectionInfo', h.id, h.ownClientId), new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('timeout')), 5000); })]); } catch (e) { return null; } finally { clearTimeout(timer); }
         if (!s || typeof s !== 'object') return null;
         const frac = [s.packetlossTotal, s.client2serverPacketlossTotal, s.server2clientPacketlossTotal].map(num).filter(v => v !== null);
         return {

@@ -3,7 +3,7 @@
  * Polls only while the mod is on AND a connection is established. Docs: superdoc/features/mod-net.md. */
 (() => {
   const DEFAULTS = { interval: 2, alert: false, pingMax: 150, lossMax: 5, bandwidth: true, position: 'bottom' };
-  const HISTORY_MS = 60000, ALERT_COOLDOWN_MS = 60000, ALERT_SAMPLES = 2, RECOVER = 0.8;
+  const HISTORY_MS = 60000, ALERT_COOLDOWN_MS = 60000, ALERT_SAMPLES = 2, STALE_MS = 15000, RECOVER = 0.8;
   const SVG = 'http://www.w3.org/2000/svg';
   let live = null;   // the running instance (settings changes are applied through it)
 
@@ -93,7 +93,7 @@
 
       /* ---- rendering ---- */
       function renderHud() {
-        const s = S(), last = samples[samples.length - 1];
+        const s = S(), last = samples.length && Date.now() - samples[samples.length - 1].t < STALE_MS ? samples[samples.length - 1] : null;   // a readout older than STALE_MS is not shown as current
         hud.hidden = !api.net.connected();
         if (hud.hidden) { if (popOpen) closePop(); return; }
         elPing.textContent = last ? fmtMs(last.ping) : '- ms';
@@ -182,6 +182,7 @@
             updates++; checkAlerts(x); if (popOpen) refreshMeta();
           }
         } finally { busy = false; }
+        const cut = Date.now() - HISTORY_MS; while (samples.length && samples[0].t < cut) samples.shift();
         renderHud(); if (popOpen) renderPop();
       }
       function restart() {
