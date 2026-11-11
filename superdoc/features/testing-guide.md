@@ -6,8 +6,8 @@ details: [agc.md](agc.md), [mods-panel.md](mods-panel.md), [mod-net.md](mod-net.
 [mod-files.md](mod-files.md). Framework: [ts6-mod-api.md](ts6-mod-api.md). Automated checks are separate (`node tools/test/run-all.mjs`).
 
 Test clients must never use your real microphone or speakers: run-all mutes isolated clients automatically (`connect_muted` alone
-does not mute on this build); check with `tools/rig/audio-audit.mjs <cdp-port>`. Test windows go to the hidden Hyprland workspace
-`special:ts6test` (window rule in [test-rig.md](test-rig.md)).
+does not mute on this build); check with `tools/rig/audio-audit.mjs <cdp-port>`. Test windows run in a headless Sway, never on your
+desktop (`tools/rig/headless-sway.sh`, see [test-rig.md](test-rig.md)).
 
 ## Start modded, get back to vanilla
 

@@ -91,7 +91,10 @@ client_up() { # client_up name port nick mic sink
   # Fresh profile every start: a reused profile comes back with a "Confirm your Account" login wall that blocks connecting.
   [ -n "${RIG_KEEP_PROFILES:-}" ] || rm -rf "$RIG/profiles/$name"
   mkdir -p "$RIG/profiles/$name"
-  ( cd "$RIG/profiles/$name" && env $(client_env "$name" "$mic" "$sink") "${extra[@]}" ccorral -- "$TS_BIN" \
+  # By default the client runs inside the headless Sway (tools/rig/headless-sway.sh), never on the user's desktop; RIG_NO_SWAY=1 opts out.
+  # LD_PRELOAD etc. go through `env` inside the wrapper so only the client loads the module, not the wrapper shell or sway.
+  local wrap=(); [ -n "${RIG_NO_SWAY:-}" ] || { "$HERE/headless-sway.sh" up || die "headless sway failed"; wrap=("$HERE/headless-sway.sh" run --); }
+  ( cd "$RIG/profiles/$name" && env $(client_env "$name" "$mic" "$sink") ccorral -- "${wrap[@]}" env "${extra[@]}" "$TS_BIN" \
       --remote-debugging-port="$port" "${CLIENT_FLAGS[@]}" > client.log 2>&1 & ) > /dev/null 2>&1   # detached from our stdio (so "rig up | tail" ends); the client segfaults on SIGTERM at exit and the job report must not leak
   wait_for 60 "$name CDP port $port" cdp_up "$port"
   wait_for 60 "$name UI" js "$port" "document.querySelector('#app').__vue__.appController.connections.length>=0"
@@ -102,7 +105,6 @@ client_up() { # client_up name port nick mic sink
       default_channel:'/',default_channel_password:'',default_channel_id:'0',sound_pack:'',show_serverquery_clients:false,send_mytsid:true,
       announce_to_chat:false,connect_muted:true,connectTime:0});a.showItem(c);return 1})()" >/dev/null || die "$name: connect failed"
   pids_of "$port" > "$RUN/$name.pid"
-  "$HERE/hide-client.sh" "$port" >/dev/null 2>&1 &   # window to the hidden special workspace (fallback for a missing windowrule); detached
 }
 connected_n() { # connected_n <port> -> number of clients visible once established, else 0
   js "$1" "(()=>{const c=document.querySelector('#app')?.__vue__?.appController?.connections?.[0]?.serverConnectionHandler;return c&&c.connectionStatus===4?[...c.GetFlatListClients()].length:0})()" 2>/dev/null
@@ -167,6 +169,7 @@ cmd_down() {
   srv_down
   sinks_down
   rm -f "$RUN"/*.pid
+  [ -n "${RIG_NO_SWAY:-}" ] || "$HERE/headless-sway.sh" down
   log "down"
 }
 
